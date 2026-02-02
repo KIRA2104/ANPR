@@ -1,0 +1,38 @@
+# App configuration
+camera:
+  # Example: rtsp://user:pass@192.168.1.50:554/stream1 or http stream URL
+  url: "rtsp://YOUR_CAMERA_URL_HERE"
+  # Optional: fallback to default webcam if true and url fails
+  webcam_fallback: true
+  frame_width: 1280
+  frame_height: 720
+
+models:
+  vehicle_path: "models/Vehicle.pt"
+  plate_path: "models/Plate.pt"
+  # inference settings
+  device: "cpu"  # set to "cuda" if GPU available
+  vehicle_conf: 0.3
+  plate_conf: 0.3
+  imgsz: 640
+
+ocr:
+  enable: true
+  lang: ["en"]
+  # Postprocessing to clean plate text
+  normalize: true
+
+logging:
+  # Minimum confidences to accept for logging
+  min_plate_text_len: 5
+  save_snapshots: true
+  snapshots_dir: "snapshots"
+  dedup_interval_sec: 10
+  overlay: true
+  show_window: true
+  window_title: "Vehicle & Plate Detection"
+
+mongodb:
+  uri: "${MONGODB_URI}"
+  database: "traffic"
+  collection: "events"
