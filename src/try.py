@@ -61,9 +61,6 @@ for result in results:
         x1, y1, x2, y2 = map(int, box.xyxy[0])
         conf = box.conf[0].item()
 
-        # ===============================
-        # TIGHT PLATE CROP (CRITICAL)
-        # ===============================
         pad_x = int(0.08 * (x2 - x1))
         pad_y = int(0.18 * (y2 - y1))
 
@@ -75,9 +72,6 @@ for result in results:
         if plate_crop.size == 0:
             continue
 
-        # ===============================
-        # OCR PREPROCESSING (CLEAN)
-        # ===============================
         gray = cv2.cvtColor(plate_crop, cv2.COLOR_BGR2GRAY)
         gray = cv2.resize(gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
         gray = cv2.GaussianBlur(gray, (5, 5), 0)
@@ -89,16 +83,10 @@ for result in results:
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
         thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
 
-        # ===============================
-        # DEBUG WINDOWS (TEMP)
-        # ===============================
         cv2.imshow("Plate Crop", plate_crop)
         cv2.imshow("OCR Input", thresh)
         cv2.waitKey(0)
 
-        # ===============================
-        # OCR (STRICT)
-        # ===============================
         ocr_result = reader.readtext(
             thresh,
             allowlist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
@@ -109,9 +97,6 @@ for result in results:
         plate_text = normalize_plate(raw_text)
         detected_texts.append(plate_text)
 
-        # ===============================
-        # DRAW RESULT
-        # ===============================
         label = f"{plate_text if plate_text else 'Plate'} ({conf:.2f})"
 
         cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
@@ -125,12 +110,9 @@ for result in results:
             2
         )
 
-# ===============================
-# SAVE & SHOW
-# ===============================
 cv2.imwrite(OUTPUT_PATH, img)
-print("✅ Output saved to:", OUTPUT_PATH)
-print("🔢 Detected Plate Numbers:", detected_texts)
+print(" Output saved to:", OUTPUT_PATH)
+print(" Detected Plate Numbers:", detected_texts)
 
 cv2.imshow("ANPR Result", img)
 cv2.waitKey(0)
