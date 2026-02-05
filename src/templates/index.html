@@ -1,10 +1,409 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
+
 <head>
-    <title>ANPR Live</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ANPR Guardian | Premium</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@300;400;600&display=swap"
+        rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            /* Slate 900 */
+        }
+
+        .font-mono-tech {
+            font-family: 'Orbitron', monospace;
+        }
+
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        .live-indicator {
+            animation: pulse-red 2s infinite;
+        }
+
+        @keyframes pulse-red {
+            0% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+            }
+
+            70% {
+                box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+            }
+        }
+    </style>
 </head>
-<body>
-    <h2>Live ANPR Web App</h2>
-    <img src="{{ url_for('video') }}" width="800">
+
+<body class="text-slate-200 h-screen overflow-hidden flex flex-col">
+
+    <!-- Header -->
+    <header class="glass-panel z-50 h-16 flex items-center justify-between px-6 border-b border-indigo-500/20">
+        <div class="flex items-center space-x-3">
+            <div
+                class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+            </div>
+            <h1 class="text-xl font-bold tracking-tight text-white"><span class="text-indigo-400">ANPR</span> GUARDIAN
+            </h1>
+        </div>
+        <div class="flex items-center space-x-4">
+            <div class="flex items-center space-x-2 px-3 py-1 rounded-full bg-slate-800/50 border border-slate-700">
+                <div class="w-2 h-2 rounded-full bg-green-500 live-indicator"></div>
+                <span class="text-xs font-semibold text-green-400 uppercase tracking-wider">System Active</span>
+            </div>
+            <span id="clock" class="text-sm font-mono text-slate-400">00:00:00</span>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
+
+        <!-- Left: Video Feed -->
+        <div
+            class="w-full lg:flex-1 h-[40vh] lg:h-full relative bg-black flex items-center justify-center group overflow-hidden flex-shrink-0">
+            <img src="/video_feed" class="w-full h-full object-contain shadow-2xl" alt="Live Feed">
+
+            <!-- Video Overlay UI -->
+            <div class="absolute top-4 left-4 flex space-x-2 z-50">
+                <span
+                    class="px-2 py-1 bg-black/60 backdrop-blur text-xs font-mono text-red-500 border border-red-500/30 rounded flex items-center">
+                    <span class="w-2 h-2 bg-red-500 rounded-full mr-2 animate-pulse"></span> LIVE
+                </span>
+
+                <!-- Source Switcher -->
+                <select id="cam-source"
+                    class="px-2 py-1 bg-black/60 backdrop-blur text-xs font-mono text-indigo-400 border border-indigo-500/30 rounded focus:outline-none cursor-pointer">
+                    <option value="server">Server Cam</option>
+                    <option value="local">Mobile/Local Cam</option>
+                </select>
+            </div>
+
+            <!-- Server Feed -->
+            <img id="server-feed" src="/video_feed"
+                class="w-full h-full object-contain shadow-2xl transition-opacity duration-300" alt="Live Feed">
+
+            <!-- Local Camera Feed (Hidden by Default) -->
+            <div id="local-feed-container"
+                class="hidden absolute inset-0 w-full h-full flex items-center justify-center bg-black">
+                <video id="local-video" autoplay playsinline muted class="w-full h-full object-contain"></video>
+                <canvas id="local-canvas" class="absolute inset-0 w-full h-full pointer-events-none"></canvas>
+            </div>
+
+            <!-- Recording Indicator (Hidden by default) -->
+            <div id="rec-indicator"
+                class="hidden absolute top-4 right-4 flex items-center space-x-2 bg-red-600/90 text-white px-3 py-1 rounded-full shadow-lg animate-pulse z-50">
+                <div class="w-2 h-2 bg-white rounded-full"></div>
+                <span class="text-xs font-bold tracking-widest">REC</span>
+            </div>
+        </div>
+
+        <!-- Right: Dashboard Sidebar -->
+        <aside
+            class="w-full lg:w-96 flex-1 lg:h-full glass-panel border-t lg:border-l lg:border-t-0 border-slate-700 flex flex-col z-40 overflow-hidden">
+            <!-- ... (Sidebar content same) ... -->
+
+            <!-- Stats Grid -->
+            <div class="p-4 lg:p-6 grid grid-cols-2 gap-4 border-b border-slate-700/50 flex-shrink-0">
+                <div
+                    class="bg-indigo-900/20 p-3 lg:p-4 rounded-xl border border-indigo-500/20 hover:border-indigo-500/50 transition-colors">
+                    <p class="text-[10px] lg:text-xs text-indigo-300 uppercase tracking-wide font-semibold mb-1">
+                        Vehicles</p>
+                    <p id="stat-vehicles" class="text-xl lg:text-2xl font-bold font-mono-tech text-white">0</p>
+                </div>
+                <div
+                    class="bg-emerald-900/20 p-3 lg:p-4 rounded-xl border border-emerald-500/20 hover:border-emerald-500/50 transition-colors">
+                    <p class="text-[10px] lg:text-xs text-emerald-300 uppercase tracking-wide font-semibold mb-1">Plates
+                        (Unq)</p>
+                    <p id="stat-plates" class="text-xl lg:text-2xl font-bold font-mono-tech text-white">0</p>
+                </div>
+            </div>
+
+            <!-- Current Detection Panel -->
+            <div
+                class="p-4 lg:p-6 border-b border-slate-700/50 bg-gradient-to-b from-slate-800/30 to-transparent flex-shrink-0">
+                <h3 class="text-xs lg:text-sm font-semibold text-slate-400 mb-2 lg:mb-4 flex items-center">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    LATEST DETECTION
+                </h3>
+                <div class="space-y-2 lg:space-y-4">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-slate-500">Vehicle Type</span>
+                        <span id="current-type" class="text-sm font-mono text-indigo-300">Scanning...</span>
+                    </div>
+                    <div>
+                        <span class="text-sm text-slate-500 mb-1 block">License Plate</span>
+                        <div
+                            class="bg-yellow-500/10 border border-yellow-500/50 rounded-lg p-2 lg:p-3 text-center relative overflow-hidden group">
+                            <div
+                                class="absolute inset-0 bg-yellow-400/10 blur-xl group-hover:bg-yellow-400/20 transition-all duration-500">
+                            </div>
+                            <span id="current-plate"
+                                class="relative text-2xl lg:text-3xl font-mono-tech font-bold text-yellow-400 tracking-widest"
+                                style="text-shadow: 0 0 20px rgba(250, 204, 21, 0.5);">----</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Live Logs Title -->
+            <div class="px-4 lg:px-6 pt-4 lg:pt-6 pb-2">
+                <h3 class="text-[10px] lg:text-xs font-bold text-slate-500 uppercase tracking-widest">Recent Activity
+                </h3>
+            </div>
+
+            <!-- Logs List (Scrollable) -->
+            <div class="flex-1 overflow-y-auto px-4 lg:px-6 pb-4 space-y-2 min-h-0" id="log-container">
+                <!-- Logs injected via JS -->
+            </div>
+
+            <!-- Footer Controls -->
+            <div class="p-4 lg:p-6 border-t border-slate-700/50 bg-slate-900/50 flex-shrink-0">
+                <button id="btn-record"
+                    class="w-full py-3 lg:py-4 rounded-xl font-bold text-sm tracking-widest uppercase transition-all duration-300 bg-slate-700 hover:bg-slate-600 text-white shadow-lg flex items-center justify-center space-x-2 border border-slate-600">
+                    <div class="w-3 h-3 bg-red-500 rounded-full"></div>
+                    <span>Start Recording</span>
+                </button>
+            </div>
+
+        </aside>
+    </main>
+
+    <script>
+        // Update Clock
+        setInterval(() => {
+            const now = new Date();
+            document.getElementById('clock').innerText = now.toLocaleTimeString();
+        }, 1000);
+
+        // State
+        let isRecording = false;
+
+        // Elements
+        const statVehicles = document.getElementById('stat-vehicles');
+        const statPlates = document.getElementById('stat-plates');
+        const currentType = document.getElementById('current-type');
+        const currentPlate = document.getElementById('current-plate');
+        const logContainer = document.getElementById('log-container');
+        const btnRecord = document.getElementById('btn-record');
+        const recIndicator = document.getElementById('rec-indicator');
+
+        // Stats Polling
+        async function fetchStats() {
+            try {
+                const res = await fetch('/api/stats');
+                const data = await res.json();
+
+                // Update specific elements directly to avoid flicker
+                if (data.latest_vehicle !== "None") currentType.innerText = data.latest_vehicle;
+                if (data.latest_plate !== "None") currentPlate.innerText = data.latest_plate;
+
+                statVehicles.innerText = data.total_vehicles;
+                statPlates.innerText = data.unique_plates;
+
+                // Update Logs
+                logContainer.innerHTML = data.logs.map(log => `
+                    <div class="bg-slate-800/50 p-2 lg:p-3 rounded-lg border border-slate-700 flex justify-between items-center animate-fade-in">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-1.5 h-8 bg-indigo-500 rounded-full"></div>
+                            <div>
+                                <p class="text-xs lg:text-sm font-bold text-white font-mono">${log.plate}</p>
+                                <p class="text-[10px] text-slate-400">${log.type}</p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-[10px] font-mono text-slate-500">${log.timestamp}</p>
+                            <span class="text-[10px] px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 rounded">${log.conf}%</span>
+                        </div>
+                    </div>
+                `).join('');
+
+                // Update Recording State
+                if (data.recording !== isRecording) {
+                    isRecording = data.recording;
+                    updateRecordUI();
+                }
+
+            } catch (err) {
+                console.error("Stats Error:", err);
+            }
+        }
+
+        function updateRecordUI() {
+            if (isRecording) {
+                btnRecord.innerHTML = '<div class="w-3 h-3 bg-slate-300 rounded-sm"></div><span>Stop Recording</span>';
+                btnRecord.classList.add('bg-red-600', 'hover:bg-red-700', 'border-red-500');
+                btnRecord.classList.remove('bg-slate-700', 'hover:bg-slate-600', 'border-slate-600');
+                recIndicator.classList.remove('hidden');
+            } else {
+                btnRecord.innerHTML = '<div class="w-3 h-3 bg-red-500 rounded-full"></div><span>Start Recording</span>';
+                btnRecord.classList.remove('bg-red-600', 'hover:bg-red-700', 'border-red-500');
+                btnRecord.classList.add('bg-slate-700', 'hover:bg-slate-600', 'border-slate-600');
+                recIndicator.classList.add('hidden');
+            }
+        }
+
+        btnRecord.addEventListener('click', async () => {
+            await fetch('/api/record', { method: 'POST' });
+            fetchStats(); // Force update
+        });
+
+        setInterval(fetchStats, 1000);
+        fetchStats();
+
+        // ============================
+        // MOBILE CAMERA LOGIC
+        // ============================
+        const camSource = document.getElementById('cam-source');
+        const serverFeed = document.getElementById('server-feed');
+        const localFeedContainer = document.getElementById('local-feed-container');
+        const localVideo = document.getElementById('local-video');
+        const localCanvas = document.getElementById('local-canvas');
+        const ctx = localCanvas.getContext('2d');
+
+        let localStream = null;
+        let processInterval = null;
+
+        camSource.addEventListener('change', async (e) => {
+            if (e.target.value === 'local') {
+                startLocalCamera();
+            } else {
+                stopLocalCamera();
+            }
+        });
+
+        async function startLocalCamera() {
+            // UI Toggle
+            serverFeed.classList.add('hidden');
+            localFeedContainer.classList.remove('hidden');
+
+            try {
+                // Request Camera (Rear prefered)
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' }
+                });
+                localVideo.srcObject = localStream;
+
+                // Start Processing Loop
+                processInterval = setInterval(processLocalFrame, 500); // 2 FPS
+
+                // Adjust Canvas Size
+                localVideo.onloadedmetadata = () => {
+                    localCanvas.width = localVideo.videoWidth;
+                    localCanvas.height = localVideo.videoHeight;
+                };
+
+            } catch (err) {
+                alert("Camera Access Denied or Error: " + err);
+                camSource.value = 'server'; // Revert
+                stopLocalCamera();
+            }
+        }
+
+        function stopLocalCamera() {
+            // UI Toggle
+            serverFeed.classList.remove('hidden');
+            localFeedContainer.classList.add('hidden');
+
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                localStream = null;
+            }
+            if (processInterval) {
+                clearInterval(processInterval);
+                processInterval = null;
+            }
+        }
+
+        async function processLocalFrame() {
+            if (!localVideo.videoWidth) return;
+
+            // 1. Capture Frame to Blob (Resize to 640w for speed)
+            const offCanvas = document.createElement('canvas');
+            const scale = 640 / localVideo.videoWidth;
+            offCanvas.width = 640;
+            offCanvas.height = localVideo.videoHeight * scale;
+
+            const offCtx = offCanvas.getContext('2d');
+            offCtx.drawImage(localVideo, 0, 0, offCanvas.width, offCanvas.height);
+
+            offCanvas.toBlob(sendFrameToServer, 'image/jpeg', 0.7);
+        }
+
+        function sendFrameToServer(blob) {
+            const formData = new FormData();
+            formData.append('frame', blob);
+
+            fetch('/api/detect_frame', {
+                method: 'POST',
+                body: formData
+            })
+                .then(res => res.json())
+                .then(data => {
+                    drawResults(data.results);
+                })
+                .catch(err => console.log("Processing Error", err));
+        }
+
+        function drawResults(results) {
+            // Clear Canvas
+            localCanvas.width = localVideo.videoWidth; // Ensure sync
+            localCanvas.height = localVideo.videoHeight;
+            ctx.clearRect(0, 0, localCanvas.width, localCanvas.height);
+
+            if (!results) return;
+
+            // Calculate Scale Back (Server processed 640w, we allow draw on full res canvas? 
+            // Wait, server processed the resized image. The coords returned are for 640w.
+            // We need to scale coords UP to match localCanvas (video) dimensions.
+
+            const scaleX = localCanvas.width / 640;
+            const scaleY = localCanvas.height / (localVideo.videoHeight * (640 / localVideo.videoWidth));
+            // Simplified: scale = videoWidth / 640
+            const scale = localVideo.videoWidth / 640;
+
+            results.forEach(item => {
+                const color = `rgb(${item.color[2]}, ${item.color[1]}, ${item.color[0]})`; // BGR to RGB
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 4;
+                ctx.fillStyle = color;
+                ctx.font = "20px font-mono";
+
+                // Coords
+                let [x1, y1, x2, y2] = item.coords;
+                // Scale coords if item has them (checking type for safety)
+                if (item.coords.length === 4) {
+                    ctx.strokeRect(x1 * scale, y1 * scale, (x2 - x1) * scale, (y2 - y1) * scale);
+                    if (item.label) {
+                        ctx.fillText(item.label, x1 * scale, (y1 * scale) - 10);
+                    }
+                } else if (item.coords.length === 2) {
+                    // Text point
+                    ctx.fillText(item.label, item.coords[0] * scale, item.coords[1] * scale);
+                }
+            });
+        }
+    </script>
 </body>
+
 </html>
