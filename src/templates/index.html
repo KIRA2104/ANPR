@@ -13,7 +13,6 @@
         body {
             font-family: 'Inter', sans-serif;
             background-color: #0f172a;
-            /* Slate 900 */
         }
 
         .font-mono-tech {
@@ -74,40 +73,40 @@
     </header>
 
     <!-- Main Content -->
-    <main class="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
+    <main class="flex-1 flex flex-col relative overflow-hidden">
 
-        <!-- Left: Video Feed -->
-        <div
-            class="w-full lg:flex-1 h-[40vh] lg:h-full relative bg-black flex items-center justify-center group overflow-hidden flex-shrink-0">
-            <img src="/video_feed" class="w-full h-full object-contain shadow-2xl" alt="Live Feed">
+        <!-- Video Feed Area -->
+        <div class="flex-1 relative bg-black flex items-center justify-center group overflow-hidden">
+            <img src="/video_feed" class="w-full h-full object-contain" alt="Live Feed">
 
-            <!-- Video Overlay UI -->
-            <div class="absolute top-4 left-4 flex space-x-2 z-50">
-                <span
-                    class="px-2 py-1 bg-black/60 backdrop-blur text-xs font-mono text-red-500 border border-red-500/30 rounded flex items-center">
-                    <span class="w-2 h-2 bg-red-500 rounded-full mr-2 animate-pulse"></span> LIVE
-                </span>
-
-                <!-- Source Switcher -->
-                <select id="cam-source"
-                    class="px-2 py-1 bg-black/60 backdrop-blur text-xs font-mono text-indigo-400 border border-indigo-500/30 rounded focus:outline-none cursor-pointer">
-                    <option value="server">Server Cam</option>
-                    <option value="local">Mobile/Local Cam</option>
-                </select>
+            <!-- Top Left: Controls & Status -->
+            <div class="absolute top-4 left-4 flex flex-col space-y-2 z-50">
+                <div class="flex space-x-2">
+                    <span
+                        class="px-3 py-1 bg-black/60 backdrop-blur text-xs font-mono text-red-500 border border-red-500/30 rounded-full flex items-center shadow-lg">
+                        <span class="w-2 h-2 bg-red-500 rounded-full mr-2 animate-pulse"></span> LIVE
+                    </span>
+                    <!-- Source Switcher -->
+                    <select id="cam-source"
+                        class="px-3 py-1 bg-black/60 backdrop-blur text-xs font-mono text-indigo-400 border border-indigo-500/30 rounded-full focus:outline-none cursor-pointer shadow-lg appearance-none text-center">
+                        <option value="server">Server Cam</option>
+                        <option value="local">Mobile Cam</option>
+                    </select>
+                </div>
             </div>
 
-            <!-- Server Feed -->
-            <img id="server-feed" src="/video_feed"
-                class="w-full h-full object-contain shadow-2xl transition-opacity duration-300" alt="Live Feed">
+            <!-- Server Feed (Image) -->
+            <img id="server-feed" src="/video_feed" class="absolute inset-0 w-full h-full object-contain"
+                alt="Live Feed">
 
-            <!-- Local Camera Feed (Hidden by Default) -->
+            <!-- Local Camera Feed (Video & Canvas) -->
             <div id="local-feed-container"
                 class="hidden absolute inset-0 w-full h-full flex items-center justify-center bg-black">
                 <video id="local-video" autoplay playsinline muted class="w-full h-full object-contain"></video>
                 <canvas id="local-canvas" class="absolute inset-0 w-full h-full pointer-events-none"></canvas>
             </div>
 
-            <!-- Recording Indicator (Hidden by default) -->
+            <!-- Rec Indicator -->
             <div id="rec-indicator"
                 class="hidden absolute top-4 right-4 flex items-center space-x-2 bg-red-600/90 text-white px-3 py-1 rounded-full shadow-lg animate-pulse z-50">
                 <div class="w-2 h-2 bg-white rounded-full"></div>
@@ -115,78 +114,49 @@
             </div>
         </div>
 
-        <!-- Right: Dashboard Sidebar -->
-        <aside
-            class="w-full lg:w-96 flex-1 lg:h-full glass-panel border-t lg:border-l lg:border-t-0 border-slate-700 flex flex-col z-40 overflow-hidden">
-            <!-- ... (Sidebar content same) ... -->
+        <!-- Minimal Info Panel (Bottom Overlay Style) -->
+        <div
+            class="glass-panel border-t border-indigo-500/20 px-6 py-4 flex flex-col md:flex-row items-center justify-between gap-4 z-50 relative bg-slate-900/90 backdrop-blur-xl">
 
-            <!-- Stats Grid -->
-            <div class="p-4 lg:p-6 grid grid-cols-2 gap-4 border-b border-slate-700/50 flex-shrink-0">
-                <div
-                    class="bg-indigo-900/20 p-3 lg:p-4 rounded-xl border border-indigo-500/20 hover:border-indigo-500/50 transition-colors">
-                    <p class="text-[10px] lg:text-xs text-indigo-300 uppercase tracking-wide font-semibold mb-1">
-                        Vehicles</p>
-                    <p id="stat-vehicles" class="text-xl lg:text-2xl font-bold font-mono-tech text-white">0</p>
-                </div>
-                <div
-                    class="bg-emerald-900/20 p-3 lg:p-4 rounded-xl border border-emerald-500/20 hover:border-emerald-500/50 transition-colors">
-                    <p class="text-[10px] lg:text-xs text-emerald-300 uppercase tracking-wide font-semibold mb-1">Plates
-                        (Unq)</p>
-                    <p id="stat-plates" class="text-xl lg:text-2xl font-bold font-mono-tech text-white">0</p>
-                </div>
-            </div>
-
-            <!-- Current Detection Panel -->
-            <div
-                class="p-4 lg:p-6 border-b border-slate-700/50 bg-gradient-to-b from-slate-800/30 to-transparent flex-shrink-0">
-                <h3 class="text-xs lg:text-sm font-semibold text-slate-400 mb-2 lg:mb-4 flex items-center">
-                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                    LATEST DETECTION
-                </h3>
-                <div class="space-y-2 lg:space-y-4">
-                    <div class="flex justify-between items-center">
-                        <span class="text-sm text-slate-500">Vehicle Type</span>
-                        <span id="current-type" class="text-sm font-mono text-indigo-300">Scanning...</span>
+            <!-- Left: Detection Info -->
+            <div class="flex-1 w-full md:w-auto flex items-center space-x-6">
+                <!-- Plate Display -->
+                <div class="relative group">
+                    <div
+                        class="absolute -inset-1 bg-gradient-to-r from-yellow-600 to-amber-600 rounded-lg blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200">
                     </div>
-                    <div>
-                        <span class="text-sm text-slate-500 mb-1 block">License Plate</span>
-                        <div
-                            class="bg-yellow-500/10 border border-yellow-500/50 rounded-lg p-2 lg:p-3 text-center relative overflow-hidden group">
-                            <div
-                                class="absolute inset-0 bg-yellow-400/10 blur-xl group-hover:bg-yellow-400/20 transition-all duration-500">
-                            </div>
-                            <span id="current-plate"
-                                class="relative text-2xl lg:text-3xl font-mono-tech font-bold text-yellow-400 tracking-widest"
-                                style="text-shadow: 0 0 20px rgba(250, 204, 21, 0.5);">----</span>
-                        </div>
+                    <div
+                        class="relative px-6 py-3 bg-slate-900 ring-1 ring-slate-900/5 rounded-lg leading-none flex items-center space-x-4 border border-yellow-500/30">
+                        <span class="text-xs text-yellow-500/70 font-bold tracking-wider uppercase">PLATE</span>
+                        <span id="current-plate"
+                            class="text-3xl md:text-4xl font-mono-tech font-bold text-yellow-400 tracking-widest drop-shadow-[0_0_10px_rgba(250,204,21,0.5)]">Scanning..</span>
                     </div>
                 </div>
+
+                <!-- Vehicle Type -->
+                <div class="hidden md:block border-l border-slate-700 pl-6">
+                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-0.5">Vehicle Type</p>
+                    <p id="current-type" class="text-lg font-mono text-indigo-300">---</p>
+                </div>
             </div>
 
-            <!-- Live Logs Title -->
-            <div class="px-4 lg:px-6 pt-4 lg:pt-6 pb-2">
-                <h3 class="text-[10px] lg:text-xs font-bold text-slate-500 uppercase tracking-widest">Recent Activity
-                </h3>
-            </div>
+            <!-- Right: Controls -->
+            <div class="w-full md:w-auto flex items-center space-x-4">
+                <!-- Mobile Vehicle Type (Visible only on small screens) -->
+                <div class="md:hidden flex-1">
+                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Vehicle</p>
+                    <p id="current-type-mobile" class="text-lg font-mono text-indigo-300">---</p>
+                </div>
 
-            <!-- Logs List (Scrollable) -->
-            <div class="flex-1 overflow-y-auto px-4 lg:px-6 pb-4 space-y-2 min-h-0" id="log-container">
-                <!-- Logs injected via JS -->
-            </div>
-
-            <!-- Footer Controls -->
-            <div class="p-4 lg:p-6 border-t border-slate-700/50 bg-slate-900/50 flex-shrink-0">
                 <button id="btn-record"
-                    class="w-full py-3 lg:py-4 rounded-xl font-bold text-sm tracking-widest uppercase transition-all duration-300 bg-slate-700 hover:bg-slate-600 text-white shadow-lg flex items-center justify-center space-x-2 border border-slate-600">
-                    <div class="w-3 h-3 bg-red-500 rounded-full"></div>
-                    <span>Start Recording</span>
+                    class="flex-1 md:flex-none py-3 px-8 rounded-xl font-bold text-sm tracking-widest uppercase transition-all duration-300 bg-slate-800 hover:bg-slate-700 text-white shadow-lg flex items-center justify-center space-x-2 border border-slate-700 group">
+                    <div
+                        class="w-3 h-3 bg-red-500 rounded-full group-hover:shadow-[0_0_10px_rgba(239,68,68,0.8)] transition-shadow">
+                    </div>
+                    <span>Record</span>
                 </button>
             </div>
-
-        </aside>
+        </div>
     </main>
 
     <script>
@@ -196,47 +166,30 @@
             document.getElementById('clock').innerText = now.toLocaleTimeString();
         }, 1000);
 
-        // State
+        // State & Elements
         let isRecording = false;
-
-        // Elements
-        const statVehicles = document.getElementById('stat-vehicles');
-        const statPlates = document.getElementById('stat-plates');
         const currentType = document.getElementById('current-type');
+        const currentTypeMobile = document.getElementById('current-type-mobile');
         const currentPlate = document.getElementById('current-plate');
-        const logContainer = document.getElementById('log-container');
         const btnRecord = document.getElementById('btn-record');
         const recIndicator = document.getElementById('rec-indicator');
 
-        // Stats Polling
+        // Stats Polling (Simplified)
         async function fetchStats() {
             try {
                 const res = await fetch('/api/stats');
                 const data = await res.json();
 
-                // Update specific elements directly to avoid flicker
-                if (data.latest_vehicle !== "None") currentType.innerText = data.latest_vehicle;
-                if (data.latest_plate !== "None") currentPlate.innerText = data.latest_plate;
+                // Update Detection Info
+                if (data.latest_vehicle !== "None") {
+                    currentType.innerText = data.latest_vehicle;
+                    if (currentTypeMobile) currentTypeMobile.innerText = data.latest_vehicle;
+                }
 
-                statVehicles.innerText = data.total_vehicles;
-                statPlates.innerText = data.unique_plates;
-
-                // Update Logs
-                logContainer.innerHTML = data.logs.map(log => `
-                    <div class="bg-slate-800/50 p-2 lg:p-3 rounded-lg border border-slate-700 flex justify-between items-center animate-fade-in">
-                        <div class="flex items-center space-x-3">
-                            <div class="w-1.5 h-8 bg-indigo-500 rounded-full"></div>
-                            <div>
-                                <p class="text-xs lg:text-sm font-bold text-white font-mono">${log.plate}</p>
-                                <p class="text-[10px] text-slate-400">${log.type}</p>
-                            </div>
-                        </div>
-                        <div class="text-right">
-                            <p class="text-[10px] font-mono text-slate-500">${log.timestamp}</p>
-                            <span class="text-[10px] px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 rounded">${log.conf}%</span>
-                        </div>
-                    </div>
-                `).join('');
+                if (data.latest_plate !== "None") {
+                    currentPlate.innerText = data.latest_plate;
+                    // Add flash effect logic here if desired
+                }
 
                 // Update Recording State
                 if (data.recording !== isRecording) {
@@ -251,28 +204,29 @@
 
         function updateRecordUI() {
             if (isRecording) {
-                btnRecord.innerHTML = '<div class="w-3 h-3 bg-slate-300 rounded-sm"></div><span>Stop Recording</span>';
-                btnRecord.classList.add('bg-red-600', 'hover:bg-red-700', 'border-red-500');
-                btnRecord.classList.remove('bg-slate-700', 'hover:bg-slate-600', 'border-slate-600');
+                btnRecord.innerHTML = '<div class="w-3 h-3 bg-slate-300 rounded-sm"></div><span>Stop</span>';
+                btnRecord.classList.add('bg-red-600/20', 'border-red-500', 'text-red-400');
+                btnRecord.classList.remove('bg-slate-800', 'border-slate-700', 'text-white');
                 recIndicator.classList.remove('hidden');
             } else {
-                btnRecord.innerHTML = '<div class="w-3 h-3 bg-red-500 rounded-full"></div><span>Start Recording</span>';
-                btnRecord.classList.remove('bg-red-600', 'hover:bg-red-700', 'border-red-500');
-                btnRecord.classList.add('bg-slate-700', 'hover:bg-slate-600', 'border-slate-600');
+                btnRecord.innerHTML = '<div class="w-3 h-3 bg-red-500 rounded-full"></div><span>Record</span>';
+                btnRecord.classList.remove('bg-red-600/20', 'border-red-500', 'text-red-400');
+                btnRecord.classList.add('bg-slate-800', 'border-slate-700', 'text-white');
                 recIndicator.classList.add('hidden');
             }
         }
 
         btnRecord.addEventListener('click', async () => {
             await fetch('/api/record', { method: 'POST' });
-            fetchStats(); // Force update
+            fetchStats();
         });
 
-        setInterval(fetchStats, 1000);
+        // Poll every 500ms for faster updates
+        setInterval(fetchStats, 500);
         fetchStats();
 
         // ============================
-        // MOBILE CAMERA LOGIC
+        // MOBILE CAMERA LOGIC (Kept Same)
         // ============================
         const camSource = document.getElementById('cam-source');
         const serverFeed = document.getElementById('server-feed');
@@ -373,13 +327,7 @@
 
             if (!results) return;
 
-            // Calculate Scale Back (Server processed 640w, we allow draw on full res canvas? 
-            // Wait, server processed the resized image. The coords returned are for 640w.
-            // We need to scale coords UP to match localCanvas (video) dimensions.
-
-            const scaleX = localCanvas.width / 640;
-            const scaleY = localCanvas.height / (localVideo.videoHeight * (640 / localVideo.videoWidth));
-            // Simplified: scale = videoWidth / 640
+            // Calculate Scale Back 
             const scale = localVideo.videoWidth / 640;
 
             results.forEach(item => {
@@ -387,7 +335,7 @@
                 ctx.strokeStyle = color;
                 ctx.lineWidth = 4;
                 ctx.fillStyle = color;
-                ctx.font = "20px font-mono";
+                ctx.font = "bold 24px monospace";
 
                 // Coords
                 let [x1, y1, x2, y2] = item.coords;

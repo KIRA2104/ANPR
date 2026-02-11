@@ -12,9 +12,9 @@ class MongoLogger:
         # Test connection on init
         try:
             self.client.admin.command('ping')
-            print("✅ MongoDB connected successfully")
+            print(" MongoDB connected successfully")
         except Exception as e:
-            print(f"⚠️ MongoDB connection warning: {e}")
+            print(f" MongoDB connection warning: {e}")
 
     def save_vehicle(self, vehicle_type, plate, confidence):
         """Synchronous vehicle logging to MongoDB"""

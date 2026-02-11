@@ -4,16 +4,15 @@ import threading
 import queue
 import time
 from datetime import datetime
+import numpy as np
 from ultralytics import YOLO
 import easyocr
-
+import tensorflow as tf
 from db import MongoLogger
 from ocr_utils import PlateTracker, clean_plate
 from draw import draw_info_panel
 
-# =========================
-# ENV + RTSP CONFIG
-# =========================
+
 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
 os.environ["YOLO_VERBOSE"] = "False"
 
@@ -21,41 +20,38 @@ RTSP_URL = "rtsp://admin:admin%40123@192.168.1.250:554/cam/realmonitor?channel=1
 DETECT_EVERY_N_FRAMES = 2
 OCR_CONF_THRESHOLD = 0.25  
 DEBUG_MODE = True
-VEHICLE_CONF = 0.25  # Lowered from 0.4 for better detection
-PLATE_CONF = 0.25    # Lowered from 0.5 for better detection
+VEHICLE_CONF = 0.25 
+PLATE_CONF = 0.25   
 
-# =========================
-# ABSOLUTE MODEL PATHS
-# =========================
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-VEHICLE_MODEL = os.path.join(BASE_DIR, "assets", "best1.pt")
-PLATE_MODEL = os.path.join(BASE_DIR, "assets", "Traffic1.pt")  # Using same model for both (only available model)
+VEHICLE_MODEL = os.path.join(BASE_DIR, "assets", "newvehicle.pt")
+PLATE_MODEL = os.path.join(BASE_DIR, "assets", "Plate.pt")  
 
-# =========================
-# LOAD MODELS
-# =========================
+
+
+
+CLASS_NAMES = ["bus", "car", "motorcycle", "truck"]
+
+
 print("Loading models...")
 if not os.path.exists(VEHICLE_MODEL):
-    print(f"❌ ERROR: Vehicle model not found at {VEHICLE_MODEL}")
+    print(f" ERROR: Vehicle model not found at {VEHICLE_MODEL}")
     exit(1)
 if not os.path.exists(PLATE_MODEL):
-    print(f"❌ ERROR: Plate model not found at {PLATE_MODEL}")
+    print(f" ERROR: Plate model not found at {PLATE_MODEL}")
     exit(1)
     
 vehicle_model = YOLO(VEHICLE_MODEL)
 plate_model = YOLO(PLATE_MODEL)
 reader = easyocr.Reader(['en'], gpu=False)
-print("✅ Models loaded successfully!")
+print(f" Models loaded successfully!")
 print(f"   Vehicle model: {VEHICLE_MODEL}")
 print(f"   Plate model: {PLATE_MODEL}")
 
 db = MongoLogger()
 tracker = PlateTracker(cooldown=60)
 
-
-# =========================
-# LOW-LATENCY VIDEO STREAM
-# =========================
 class VideoStream:
     def __init__(self, src):
         self.src = src
@@ -69,7 +65,7 @@ class VideoStream:
             self.cap.release()
         self.cap = cv2.VideoCapture(self.src, cv2.CAP_FFMPEG)
         self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        # Get camera FPS for later use
+        
         self.fps = self.cap.get(cv2.CAP_PROP_FPS) or 20.0
         if self.fps <= 0:
             self.fps = 20.0
@@ -99,7 +95,7 @@ class VideoStream:
         try:
             return self.queue.get_nowait()
         except queue.Empty:
-            # Small sleep to prevent CPU spinning
+            
             time.sleep(0.01)
             return None
 
@@ -113,10 +109,24 @@ class VideoStream:
             self.cap.release()
 
 
+def classify_vehicle(crop):
+    try:
+        img = cv2.resize(crop, (224, 224))
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img = img / 255.0
+        img = np.expand_dims(img, axis=0)
 
-# =========================
-# HELPER: Process detections
-# =========================
+        pred = vehicle_classifier.predict(img, verbose=0)
+        idx = int(np.argmax(pred))
+        conf = float(pred[0][idx])
+
+        return f"{CLASS_NAMES[idx]} {conf:.2f}"
+    except Exception as e:
+        if DEBUG_MODE:
+            print("Classifier error:", e)
+        return "unknown"
+
+
 def process_vehicle_detection(frame, results, db_instance, tracker_instance, last_ocr_plate_ref, last_vehicle_logged_ref):
     """
     Process vehicle detection and extract/recognize plates.
@@ -129,10 +139,10 @@ def process_vehicle_detection(frame, results, db_instance, tracker_instance, las
     last_vehicle_logged = last_vehicle_logged_ref
 
     if results and len(results.boxes) > 0:
-        # Select box with highest confidence, not first box
+        
         box = max(results.boxes, key=lambda b: float(b.conf[0]))
         last_box = tuple(map(int, box.xyxy[0]))
-        current_v_type = results.names[int(box.cls[0])]
+        current_v_type = "unknown"
         
         vehicle_key = (current_v_type, tuple(last_box))
         if DEBUG_MODE and vehicle_key != last_vehicle_logged:
@@ -140,37 +150,45 @@ def process_vehicle_detection(frame, results, db_instance, tracker_instance, las
             last_vehicle_logged = vehicle_key
 
         x1, y1, x2, y2 = last_box
-        # Validate crop bounds
+       
         if x2 > x1 and y2 > y1:
-            # Clamp vehicle box to frame bounds for safety
+           
             h, w = frame.shape[:2]
             x1, y1 = max(0, x1), max(0, y1)
             x2, y2 = min(w, x2), min(h, y2)
             
-            # Re-validate after clamping
+           
             if x2 > x1 and y2 > y1:
                 v_crop = frame[y1:y2, x1:x2]
+                current_v_type = classify_vehicle(v_crop)
+            else:
+                if DEBUG_MODE:
+                    print(" Invalid vehicle crop coordinates after clamping")
+                v_crop = None
             
             try:
+                if v_crop is None:
+                    raise ValueError("Empty vehicle crop")
+
                 p_results = plate_model(v_crop, conf=PLATE_CONF, verbose=False)[0]
 
                 if DEBUG_MODE:
                     print(f"   Found {len(p_results.boxes)} plate(s) in vehicle")
 
-                # Process each detected plate
+              
                 for p in p_results.boxes:
                     px1, py1, px2, py2 = map(int, p.xyxy[0])
                     
-                    # Clamp to image bounds
+                  
                     h, w = v_crop.shape[:2]
                     px1, py1 = max(0, px1), max(0, py1)
                     px2, py2 = min(w, px2), min(h, py2)
                     
-                    # Validate plate region after clamping
+                    
                     if px2 > px1 and py2 > py1:
                         p_img = v_crop[py1:py2, px1:px2]
 
-                        # Debug: Show OCR crop
+                       
                         if DEBUG_MODE and p_img.size > 0:
                             scaled_plate = cv2.resize(p_img, (300, 100))
                             cv2.imshow("OCR_CROP", scaled_plate)
@@ -179,47 +197,47 @@ def process_vehicle_detection(frame, results, db_instance, tracker_instance, las
                             ocr = reader.readtext(p_img)
                             
                             if ocr and len(ocr) > 0:
-                                # Select OCR result with highest confidence
+                                
                                 best = max(ocr, key=lambda x: x[2])
                                 text, conf = best[1], best[2]
                                 
                                 if DEBUG_MODE:
-                                    print(f"🔍 OCR Raw: '{text}' | Confidence: {conf:.2f}")
+                                    print(f" OCR Raw: '{text}' | Confidence: {conf:.2f}")
                                 
                                 plate = clean_plate(text)
                                 
                                 if DEBUG_MODE and plate:
-                                    print(f"✅ Cleaned Plate: {plate}")
+                                    print(f" Cleaned Plate: {plate}")
                                 
-                                # Validate and log plate
+        
                                 if plate and conf >= OCR_CONF_THRESHOLD:
                                     if plate != last_ocr_plate:
                                         current_plate = plate
                                         last_ocr_plate = plate
-                                        print(f"🚗 NEW PLATE: {plate} (conf: {conf:.2f})")
+                                        print(f" NEW PLATE: {plate} (conf: {conf:.2f})")
                                         
                                         if tracker_instance.should_log(plate):
-                                            print(f"💾 Saving to DB: {plate}")
-                                            # Synchronous DB call - no async/await needed
+                                            print(f" Saving to DB: {plate}")
+                                            
                                             db_instance.save_vehicle(current_v_type, plate, conf)
                                 elif DEBUG_MODE and plate:
-                                    print(f"⚠️ Plate '{plate}' rejected - Confidence {conf:.2f} < {OCR_CONF_THRESHOLD}")
+                                    print(f" Plate '{plate}' rejected - Confidence {conf:.2f} < {OCR_CONF_THRESHOLD}")
                             elif DEBUG_MODE:
                                 print(f"   No OCR results for this crop")
                                 
                         except Exception as ocr_err:
                             if DEBUG_MODE:
-                                print(f"❌ OCR error: {ocr_err}")
+                                print(f" OCR error: {ocr_err}")
                     else:
                         if DEBUG_MODE:
-                            print(f"❌ Invalid plate region after clamping")
+                            print(f" Invalid plate region after clamping")
                             
             except Exception as plate_det_err:
                 if DEBUG_MODE:
-                    print(f"❌ Plate detection error: {plate_det_err}")
+                    print(f" Plate detection error: {plate_det_err}")
         else:
             if DEBUG_MODE:
-                print(f"❌ Invalid vehicle crop coordinates")
+                print(f" Invalid vehicle crop coordinates")
 
     if not results or len(results.boxes) == 0:
         last_vehicle_logged = None
@@ -227,9 +245,6 @@ def process_vehicle_detection(frame, results, db_instance, tracker_instance, las
     return current_v_type, current_plate, last_ocr_plate, last_box, last_vehicle_logged
 
 
-# =========================
-# MAIN LOOP
-# =========================
 def main():
     recording = False
     video_writer = None
@@ -246,9 +261,9 @@ def main():
     last_box = None
     last_vehicle_logged = None
 
-    print("🚗 ANPR Started - HD Stream")
-    print("🎥 r = record | 1 = save | 2 = discard | q = quit")
-    print("🧪 t = test plate detection (mock) | Debug mode: ON")
+    print(" ANPR Started - HD Stream")
+    print(" r = record | 1 = save | 2 = discard | q = quit")
+    print(" t = test plate detection (mock) | Debug mode: ON")
 
     try:
         while True:
@@ -258,8 +273,6 @@ def main():
 
             frame = cv2.resize(frame, (1280, 720), interpolation=cv2.INTER_CUBIC)
             frame_id += 1
-
-            # Step A: DETECTION (THROTTLED)
             if frame_id % DETECT_EVERY_N_FRAMES == 0:
                 try:
                     results = vehicle_model(frame, conf=VEHICLE_CONF, verbose=False)[0]
@@ -267,11 +280,11 @@ def main():
                         frame, results, db, tracker, last_ocr_plate, last_vehicle_logged
                     )
                 except Exception as detection_err:
-                    print(f"❌ Detection error: {detection_err}")
+                    print(f" Detection error: {detection_err}")
                     last_box = None
                     current_v_type = "Scanning..."
 
-            # Step B: Draw bounding box if detected
+
             if last_box:
                 lx1, ly1, lx2, ly2 = last_box
                 cv2.rectangle(frame, (lx1, ly1), (lx2, ly2), (0, 255, 0), 2)
@@ -280,17 +293,15 @@ def main():
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2
                 )
 
-            # Step C: Draw info panel
+
             draw_info_panel(frame, vehicle_type=current_v_type, plate=current_plate)
 
-            # Step D: Write to video if recording
             if recording and video_writer:
                 video_writer.write(frame)
 
             cv2.imshow("ANPR Live", frame)
             key = cv2.waitKey(1) & 0xFF
 
-            # --- TEST MODE ---
             if key == ord('t'):
                 test_plate = "MH12AB1234"
                 current_plate = test_plate
@@ -301,22 +312,18 @@ def main():
                 except Exception as e:
                     print(f"⚠️ Test mode DB error: {e}")
 
-            # --- CONTROL LOGIC ---
-            # START RECORDING
             if key == ord('r') and not recording:
                 os.makedirs("recordings", exist_ok=True)
                 video_path = f"recordings/{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
                 h, w = frame.shape[:2]
                 fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-                # Use actual camera FPS for recording, defaults to 20.0 if unavailable
                 camera_fps = stream.get_fps()
                 video_writer = cv2.VideoWriter(video_path, fourcc, camera_fps, (w, h))
                 recording = True
-                print(f"🔴 Recording started at {camera_fps:.1f} FPS")
+                print(f"Recording started at {camera_fps:.1f} FPS")
 
-            # STOP + SAVE TO DB
             elif key == ord('1') and recording:
-                print("🛑 Stopping & saving")
+                print("Stopping & saving")
                 if video_writer:
                     video_writer.release()
                 video_writer = None
@@ -324,11 +331,11 @@ def main():
                 try:
                     db.save_video(video_path, reason="manual_save")
                 except Exception as e:
-                    print(f"⚠️ Video save error: {e}")
+                    print(f" Video save error: {e}")
 
             # STOP + DISCARD
             elif key == ord('2') and recording:
-                print("🗑️ Stopping & discarding")
+                print(" Stopping & discarding")
                 if video_writer:
                     video_writer.release()
                 video_writer = None
@@ -336,24 +343,21 @@ def main():
                 if video_path and os.path.exists(video_path):
                     os.remove(video_path)
 
-            # QUIT
             elif key == ord('q'):
                 break
 
     finally:
-        # Cleanup
+      
         if video_writer:
             video_writer.release()
         stream.stop()
         cv2.destroyAllWindows()
-        # Safely close OCR debug window if it was opened
         try:
             cv2.destroyWindow("OCR_CROP")
         except cv2.error:
             pass
         stats = tracker.get_stats()
-        print(f"\n📊 Session Stats: {stats}")
-
+        print(f"\n Session Stats: {stats}")
 
 if __name__ == "__main__":
     main()

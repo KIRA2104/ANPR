@@ -1,9 +1,9 @@
-# App configuration
+
 camera:
-  # Example: rtsp://user:pass@192.168.1.50:554/stream1 or http stream URL
-  url: "rtsp://YOUR_CAMERA_URL_HERE"
-  # Optional: fallback to default webcam if true and url fails
-  webcam_fallback: true
+ 
+  url: "http://10.130.171.135:8080/video"
+
+  webcam_fallback: false
   frame_width: 1280
   frame_height: 720
 

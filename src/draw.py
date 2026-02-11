@@ -2,7 +2,7 @@ from typing import Tuple, Optional
 import cv2
 
 def draw_info_panel(frame, vehicle_type: Optional[str] = None, plate: Optional[str] = None):
-    # Minimalist text overlay
+   
     x, y = 30, 50
     
     v_text = f"Vehicle: {vehicle_type if vehicle_type else 'Scanning...'}"
