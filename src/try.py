@@ -11,7 +11,12 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 MODEL_PATH = os.path.join(BASE_DIR, "assets", "best1.pt")
-VIDEO_PATH = os.path.join(os.path.dirname(BASE_DIR), "recordings", "test.mp4")
+IMAGES_DIR = os.path.join(
+    os.path.dirname(BASE_DIR),
+    "recordings",
+    "archive",
+    "State-wise_OLX"
+)
 # ===============================
 # LOAD MODEL & OCR
 # ===============================
@@ -28,11 +33,13 @@ reader = easyocr.Reader(['en'], gpu=False)
 # CONSTANTS (RELAXED)
 # ===============================
 # Very light filters: only avoid obviously tiny or border-touching boxes.
+DETECTION_CONF = 0.25          # lower conf to catch smaller/blurrier plates
 MIN_PLATE_AREA_RATIO = 0.0003   # 0.03% of frame area – almost everything passes
 MIN_PLATE_HEIGHT_RATIO = 0.015  # 1.5% of frame height – very small allowed
 BORDER_MARGIN = 2               # only reject boxes that literally touch edges
 PROCESS_EVERY_N_FRAMES = 1      # process every frame
 DEBUG_REJECTIONS = False        # set True if you want to see why boxes are rejected
+DEBUG_OCR = True                # enable OCR debug for now
 
 # ===============================
 # HELPERS
@@ -49,7 +56,7 @@ def is_plate_quality_good(x1, y1, x2, y2, frame_w, frame_h):
     if width <= 0 or height <= 0:
         return False
 
-    # 1) Reject plates touching borders (likely partial/cut-off)
+  
     if (
         x1 <= BORDER_MARGIN
         or y1 <= BORDER_MARGIN
@@ -99,121 +106,149 @@ def normalize_plate(text: str) -> str:
     text = text.replace("S", "5").replace("Z", "2")
     text = text.replace("B", "8")
 
-    match = re.search(r"^[A-Z]{2}[0-9]{2}[A-Z]{1,2}[0-9]{4}$", text)
+    # Accept plates with 3 or 4 digits at the end
+    match = re.search(r"^[A-Z]{2}[0-9]{2}[A-Z]{1,2}[0-9]{3,4}$", text)
     return match.group(0) if match else ""
 
 
 # ===============================
-# READ VIDEO
+# READ IMAGES
 # ===============================
-cap = cv2.VideoCapture(VIDEO_PATH)
-if not cap.isOpened():
-    raise FileNotFoundError(f"❌ Video not found or cannot be opened: {VIDEO_PATH}")
+if not os.path.isdir(IMAGES_DIR):
+    raise FileNotFoundError(f"❌ Image folder not found: {IMAGES_DIR}")
+
+state_dirs = [
+    d for d in sorted(os.listdir(IMAGES_DIR))
+    if os.path.isdir(os.path.join(IMAGES_DIR, d))
+]
+
+if not state_dirs:
+    raise FileNotFoundError(f"❌ No state folders found in: {IMAGES_DIR}")
 
 detected_texts = []  # store all accepted plates
-frame_count = 0
 
-try:
-    while True:
-        ret, img = cap.read()
-        if not ret or img is None:
-            print("End of video or cannot read frame.")
-            break
-        
-        frame_count += 1
+print("Available states:")
+print(", ".join(state_dirs))
+print("\nType a state code to run (or 'all' to run every state, 'q' to quit).")
 
-        # ===============================
-        # YOLO DETECTION (every frame)
-        # ===============================
-        results = model.predict(img, conf=0.4, verbose=False)
+while True:
+    selection = input("State> ").strip().upper()
+    if selection in {"Q", "QUIT", "EXIT"}:
+        break
 
-        for result in results:
-            if result.boxes is None:
+    if selection == "ALL":
+        selected_states = state_dirs
+    elif selection in state_dirs:
+        selected_states = [selection]
+    else:
+        print("Invalid state. Try again.")
+        continue
+
+    for state in selected_states:
+        state_path = os.path.join(IMAGES_DIR, state)
+        image_paths = []
+        for root, _, files in os.walk(state_path):
+            for filename in files:
+                if filename.lower().endswith((".jpg", ".jpeg", ".png", ".bmp", ".webp")):
+                    image_paths.append(os.path.join(root, filename))
+
+        if not image_paths:
+            print(f"\n=== {state} ===")
+            print("No images found.")
+            continue
+
+        print(f"\n=== {state} ===")
+        print(f"Found {len(image_paths)} images. Running detection...")
+
+        for image_path in sorted(image_paths):
+            img = cv2.imread(image_path)
+            if img is None:
+                print(f"[SKIP] Cannot read: {image_path}")
                 continue
 
-            for box in result.boxes:
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                conf = float(box.conf[0])
+            results = model.predict(img, conf=DETECTION_CONF, verbose=False)
+            found_in_image = []
+            total_boxes = 0
+            ocr_candidates = []
 
-                # Ensure bbox is within frame bounds
-                h, w = img.shape[:2]
-                x1, y1 = max(0, x1), max(0, y1)
-                x2, y2 = min(w - 1, x2), min(h - 1, y2)
-                if x2 <= x1 or y2 <= y1:
-                    continue
-                
-                # Very relaxed quality check: just avoid tiny / border-touching boxes
-                if not is_plate_quality_good(x1, y1, x2, y2, w, h):
-                    # Just draw thin red box to show ignored detection
-                    cv2.rectangle(img, (x1, y1), (x2, y2), (0, 0, 255), 1)
+            for result in results:
+                if result.boxes is None:
                     continue
 
-                pad_x = int(0.08 * (x2 - x1))
-                pad_y = int(0.18 * (y2 - y1))
+                for box in result.boxes:
+                    total_boxes += 1
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
 
-                # Apply padding and clamp to image
-                px1 = max(0, x1 + pad_x)
-                py1 = max(0, y1 + pad_y)
-                px2 = min(w - 1, x2 - pad_x)
-                py2 = min(h - 1, y2 - pad_y)
+                    # Ensure bbox is within frame bounds
+                    h, w = img.shape[:2]
+                    x1, y1 = max(0, x1), max(0, y1)
+                    x2, y2 = min(w - 1, x2), min(h - 1, y2)
+                    if x2 <= x1 or y2 <= y1:
+                        continue
 
-                if px2 <= px1 or py2 <= py1:
-                    continue
+                    # Debug: allow all boxes to reach OCR
+                    # if not is_plate_quality_good(x1, y1, x2, y2, w, h):
+                    #     continue
 
-                plate_crop = img[py1:py2, px1:px2]
+                    pad_x = int(0.08 * (x2 - x1))
+                    pad_y = int(0.18 * (y2 - y1))
 
-                if plate_crop.size == 0:
-                    continue
+                    # Apply padding and clamp to image
+                    px1 = max(0, x1 + pad_x)
+                    py1 = max(0, y1 + pad_y)
+                    px2 = min(w - 1, x2 - pad_x)
+                    py2 = min(h - 1, y2 - pad_y)
 
-                gray = cv2.cvtColor(plate_crop, cv2.COLOR_BGR2GRAY)
-                gray = cv2.resize(gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
-                gray = cv2.GaussianBlur(gray, (5, 5), 0)
+                    if px2 <= px1 or py2 <= py1:
+                        continue
 
-                _, thresh = cv2.threshold(
-                    gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-                )
+                    plate_crop = img[py1:py2, px1:px2]
+                    if plate_crop.size == 0:
+                        continue
 
-                kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-                thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+                    gray = cv2.cvtColor(plate_crop, cv2.COLOR_BGR2GRAY)
+                    gray = cv2.resize(gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
+                    gray = cv2.GaussianBlur(gray, (5, 5), 0)
 
-                ocr_result = reader.readtext(
-                    thresh,
-                    allowlist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
-                    detail=1
-                )
+                    _, thresh = cv2.threshold(
+                        gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+                    )
 
-                # Combine OCR strings and normalize
-                raw_text = "".join([r[1] for r in ocr_result]) if ocr_result else ""
-                plate_text = normalize_plate(raw_text)
+                    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+                    thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
 
-                if plate_text:
-                    detected_texts.append(plate_text)
-                    color = (0, 255, 0)
-                    label_text = plate_text
-                    print(f"Detected plate: {plate_text}")
+                    ocr_result = reader.readtext(
+                        thresh,
+                        allowlist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+                        detail=1
+                    )
+
+                    raw_text = "".join([r[1] for r in ocr_result]) if ocr_result else ""
+                    plate_text = normalize_plate(raw_text)
+
+                    if plate_text:
+                        detected_texts.append(plate_text)
+                        found_in_image.append(plate_text)
+                    elif DEBUG_OCR and raw_text:
+                        avg_conf = sum(r[2] for r in ocr_result) / len(ocr_result)
+                        ocr_candidates.append(f"{raw_text} ({avg_conf:.2f})")
+
+            if found_in_image:
+                unique_found = sorted(set(found_in_image))
+                print(f"[OK] {image_path}")
+                print(f"     Plates: {', '.join(unique_found)}")
+            else:
+                if total_boxes == 0:
+                    print(f"[NO DET] {image_path}")
                 else:
-                    color = (0, 255, 255)
-                    label_text = raw_text[:10] if raw_text else "Plate?"
-
-                label = f"{label_text} ({conf:.2f})"
-                cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
-                cv2.putText(
-                    img, label, (x1, y1 - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2
-                )
-
-        cv2.imshow("ANPR Result (relaxed+regex)", img)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-finally:
-    cap.release()
-    cv2.destroyAllWindows()
+                    print(f"[NONE] {image_path}")
+                    if DEBUG_OCR and ocr_candidates:
+                        print(f"     OCR: {', '.join(ocr_candidates[:5])}")
 
 # Aggregate detections (simple frequency count)
 from collections import Counter
 
 counts = Counter(detected_texts)
-print("\nRaw detected plate strings:", detected_texts)
 print("\nUnique plates with counts:")
 for plate, cnt in counts.items():
     print(f"  {plate}: {cnt} time(s)")
