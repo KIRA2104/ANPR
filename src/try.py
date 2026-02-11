@@ -32,18 +32,15 @@ reader = easyocr.Reader(['en'], gpu=False)
 # ===============================
 # CONSTANTS (RELAXED)
 # ===============================
-# Very light filters: only avoid obviously tiny or border-touching boxes.
-DETECTION_CONF = 0.25          # lower conf to catch smaller/blurrier plates
-MIN_PLATE_AREA_RATIO = 0.0003   # 0.03% of frame area – almost everything passes
-MIN_PLATE_HEIGHT_RATIO = 0.015  # 1.5% of frame height – very small allowed
-BORDER_MARGIN = 2               # only reject boxes that literally touch edges
-PROCESS_EVERY_N_FRAMES = 1      # process every frame
-DEBUG_REJECTIONS = False        # set True if you want to see why boxes are rejected
-DEBUG_OCR = True                # enable OCR debug for now
 
-# ===============================
-# HELPERS
-# ===============================
+DETECTION_CONF = 0.25          
+MIN_PLATE_AREA_RATIO = 0.0003   
+MIN_PLATE_HEIGHT_RATIO = 0.015 
+BORDER_MARGIN = 2               
+PROCESS_EVERY_N_FRAMES = 1      
+DEBUG_REJECTIONS = False        
+DEBUG_OCR = True               
+
 def is_plate_quality_good(x1, y1, x2, y2, frame_w, frame_h):
     """
     VERY relaxed quality check:
@@ -56,7 +53,6 @@ def is_plate_quality_good(x1, y1, x2, y2, frame_w, frame_h):
     if width <= 0 or height <= 0:
         return False
 
-  
     if (
         x1 <= BORDER_MARGIN
         or y1 <= BORDER_MARGIN
@@ -67,7 +63,6 @@ def is_plate_quality_good(x1, y1, x2, y2, frame_w, frame_h):
             print("border reject")
         return False
 
-    # 2) Rough size check
     frame_area = frame_w * frame_h
     area_ratio = (width * height) / float(frame_area)
     height_ratio = height / float(frame_h)
@@ -80,42 +75,54 @@ def is_plate_quality_good(x1, y1, x2, y2, frame_w, frame_h):
     return True
 
 
-def normalize_plate(text: str) -> str:
+def clean_plate_robust(text: str) -> str:
     """
-    Normalize OCR text into strict Indian plate format:
-
-      XX00XX0000 or XX00X0000
-      - First 2: letters (state)
-      - Next 2: digits (district)
-      - Next 1–2: letters (series)
-      - Last 4: digits
-
-    Returns cleaned plate or "" if not matching this pattern.
+    Robust cleaning for Indian License Plates (e.g., MH12DE1433)
+    Format: XX 00 XX 0000
+    - Pos 0,1: Letters (State)
+    - Pos 2,3: Digits (District)
+    - Pos 4,5/4,5,6: Letters (Series) - variable length
+    - Last 4: Digits (Number)
     """
-    if not text:
+    if not text: return ""
+    
+   
+    text = text.upper()
+    text = re.sub(r"[^A-Z0-9]", "", text)
+    
+    if len(text) < 8 or len(text) > 10:
         return ""
 
-    # Basic cleanup
-    text = text.upper()
-    text = text.strip().replace(" ", "").replace("-", "")
-    text = re.sub(r"[^A-Z0-9]", "", text)
+    dict_char_to_int = {'O': '0', 'I': '1', 'J': '3', 'A': '4', 'G': '6', 'S': '5', 'Z': '2', 'B': '8', 'T': '7', 'Q': '0', 'D': '0'}
+    dict_int_to_char = {'0': 'O', '1': 'I', '2': 'Z', '3': 'J', '4': 'A', '6': 'G', '5': 'S', '8': 'B', '7': 'T'}
 
-    # Mild OCR character corrections
-    text = text.replace("O", "0").replace("Q", "0")
-    text = text.replace("I", "1").replace("L", "1")
-    text = text.replace("S", "5").replace("Z", "2")
-    text = text.replace("B", "8")
+    text_list = list(text)
+    for i in [0, 1]:
+        if text_list[i] in dict_int_to_char:
+            text_list[i] = dict_int_to_char[text_list[i]]
+    
+    for i in [2, 3]:
+        if text_list[i] in dict_char_to_int:
+            text_list[i] = dict_char_to_int[text_list[i]]
 
-    # Accept plates with 3 or 4 digits at the end
-    match = re.search(r"^[A-Z]{2}[0-9]{2}[A-Z]{1,2}[0-9]{3,4}$", text)
-    return match.group(0) if match else ""
+    
+    suffix_start = len(text_list) - 4
+    for i in range(suffix_start, len(text_list)):
+        if text_list[i] in dict_char_to_int:
+            text_list[i] = dict_char_to_int[text_list[i]]
+
+    
+    result = "".join(text_list)
+    
+    if re.match(r"^[A-Z]{2}[0-9]{2}[A-Z]{0,3}[0-9]{3,4}$", result):
+        return result
+
+    return ""
 
 
-# ===============================
-# READ IMAGES
-# ===============================
+
 if not os.path.isdir(IMAGES_DIR):
-    raise FileNotFoundError(f"❌ Image folder not found: {IMAGES_DIR}")
+    raise FileNotFoundError(f"Image folder not found: {IMAGES_DIR}")
 
 state_dirs = [
     d for d in sorted(os.listdir(IMAGES_DIR))
@@ -123,9 +130,9 @@ state_dirs = [
 ]
 
 if not state_dirs:
-    raise FileNotFoundError(f"❌ No state folders found in: {IMAGES_DIR}")
+    raise FileNotFoundError(f" No state folders found in: {IMAGES_DIR}")
 
-detected_texts = []  # store all accepted plates
+detected_texts = [] 
 
 print("Available states:")
 print(", ".join(state_dirs))
@@ -179,21 +186,17 @@ while True:
                     total_boxes += 1
                     x1, y1, x2, y2 = map(int, box.xyxy[0])
 
-                    # Ensure bbox is within frame bounds
                     h, w = img.shape[:2]
                     x1, y1 = max(0, x1), max(0, y1)
                     x2, y2 = min(w - 1, x2), min(h - 1, y2)
                     if x2 <= x1 or y2 <= y1:
                         continue
 
-                    # Debug: allow all boxes to reach OCR
-                    # if not is_plate_quality_good(x1, y1, x2, y2, w, h):
-                    #     continue
 
                     pad_x = int(0.08 * (x2 - x1))
                     pad_y = int(0.18 * (y2 - y1))
 
-                    # Apply padding and clamp to image
+                   
                     px1 = max(0, x1 + pad_x)
                     py1 = max(0, y1 + pad_y)
                     px2 = min(w - 1, x2 - pad_x)
@@ -224,7 +227,7 @@ while True:
                     )
 
                     raw_text = "".join([r[1] for r in ocr_result]) if ocr_result else ""
-                    plate_text = normalize_plate(raw_text)
+                    plate_text = clean_plate_robust(raw_text)
 
                     if plate_text:
                         detected_texts.append(plate_text)
@@ -245,7 +248,7 @@ while True:
                     if DEBUG_OCR and ocr_candidates:
                         print(f"     OCR: {', '.join(ocr_candidates[:5])}")
 
-# Aggregate detections (simple frequency count)
+
 from collections import Counter
 
 counts = Counter(detected_texts)
