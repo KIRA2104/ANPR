@@ -1,59 +1,82 @@
-# License Plate and Vehicle Type Detector
+# ANPR Guardian: License Plate & Vehicle Detection
 
-Live IP camera inference that detects vehicles, finds license plates, reads text via OCR, overlays results on the stream, and logs entries to MongoDB.
+A comprehensive web-based Automatic Number Plate Recognition (ANPR) system featuring live video detection, mobile camera integration, and a premium glassmorphism UI.
 
 ## Features
-- YOLO model for vehicle detection (`models/Vehicle.pt`)
-- YOLO model for plate detection (`models/Plate.pt`)
-- EasyOCR for plate text extraction
-- On-frame overlays (boxes + labels)
-- MongoDB logging with deduplication window
-- Optional snapshots saved to disk
 
-## Setup
+### 1. **Core ANPR Engine**
+- **Vehicle Detection**: YOLOv8-based model (`yolov8n.pt`/`Vehicle.pt`) detects cars, motorcycles, buses, and trucks.
+- **License Plate Detection**: Specialized YOLO model (`Plate.pt`) locates number plates.
+- **OCR & Normalization**: EasyOCR with **smart post-processing** (`clean_plate_robust`) specifically tuned for Indian License Plates (Corrects `O`->`0`, `I`->`1`, etc.).
+- **Vehicle Classification**: Optional integration with Keras classifier (`vehicle_classifier.keras`).
 
-1. Python env (recommended: use your existing venv)
+### 2. **Web Interface**
+- **Premium UI**: Minimalist Dark Mode dashboard with glassmorphism effects.
+- **Live Streaming**: Real-time video feed from IP Cameras (RTSP) or Webcams.
+- **Mobile Camera Support**: Use your mobile phone as a network camera by scanning the QR code or accessing the local network IP.
+- **Real-time Logs**: Displays latest detection (Vehicle Type + Plate Number) instantly.
 
+### 3. **Backend & Data**
+- **Flask Server**: Lightweight Python web server handling video streaming and API requests.
+- **MongoDB Integration**: Auto-logs vehicle entries with timestamps and confidence scores.
+- **Smart Deduplication**: Prevents spamming logs for the same vehicle within a configurable cooldown period.
+
+## Installation
+
+### Prerequisites
+- Python 3.10+
+- MongoDB (optional, for logging)
+
+### Setup
+1. **Clone & Install Dependencies**
+   ```bash
+   git clone <repo_url>
+   cd LicensePlateDetection-AIML-main
+   pip install -r requirements.txt
+   ```
+
+2. **Model Setup**
+   Ensure your models are in `src/assets/`:
+   - `Vehicle.pt` (or `best1.pt`)
+   - `Plate.pt` (or `Traffic1.pt`)
+   - `vehicle_classifier.keras` (Optional)
+
+3. **Configuration**
+   - Edit `config.yaml` to set your camera URL (`rtsp://...`) or use `0` for webcam.
+   - Set environment variables if needed (`MONGODB_URI`).
+
+## Usage
+
+### 🚀 Run the Web App
+Start the main application:
 ```bash
-python -m venv .venv
-source .venv/bin/activate
+python src/anpr_ipcam.py
 ```
+- Access the dashboard at: `http://localhost:5005`
+- To use your mobile camera, ensure your phone and PC are on the same Wi-Fi, then visit `http://<YOUR_PC_IP>:5005` on your phone.
 
-2. Install dependencies
-
+### 🧪 Batch Testing Script
+To test detection accuracy on a folder of images without running the full web app:
 ```bash
-pip install -r requirements.txt
+python src/try.py
 ```
+- This script provides **advanced debug logs** and visualizes OCR results in the terminal.
+- Ideal for testing the `clean_plate_robust` logic.
 
-3. Place your trained models
-- Vehicle detector at `models/Vehicle.pt`
-- Plate detector at `models/Plate.pt`
+## Project Structure
+- `src/anpr_ipcam.py`: **Main Application Entry Point** (Flask + Inference Loop).
+- `src/try.py`: Standalone batch testing script.
+- `src/ocr_utils.py`: Helper functions for plate tracking and cleaning.
+- `src/db.py`: Database connection handler.
+- `src/templates/index.html`: Frontend UI.
+- `src/assets/`: Directory for YOLO/Keras models.
+- `recordings/`: Saved video clips (if recording is enabled).
 
-4. Configure
-- Copy `.env.example` to `.env` and set `MONGODB_URI`.
-- Edit `config.yaml`:
-  - `camera.url`: IP camera RTSP/HTTP URL
-  - `models.vehicle_path` / `models.plate_path`
-  - `mongodb` database/collection if desired
+## Troubleshooting
+- **No Detection?** Check lighting conditions or adjust `confidence` thresholds in `config.yaml`.
+- **OCR Errors?** The system is optimized for standard Indian fonts. Heavily stylized plates may fail. Use `src/try.py` to debug specific images.
+- **Mobile Cam Lag?** Ensure a strong Wi-Fi connection.
 
-## Run
-
-```bash
-python src/app.py
-```
-
-- Press `q` to quit the live window.
-- If the camera URL fails and `webcam_fallback` is true, it will open the default webcam.
-
-## MongoDB Document
-Each event document includes:
-- `timestamp`, `camera_url`
-- `vehicle_type`, `vehicle_conf`
-- `plate_text`, `plate_conf`, `ocr_conf`
-- `vehicle_bbox`, `plate_bbox`
-- `snapshot_path` (if enabled)
-
-## Notes
-- OCR accuracy depends on plate crop quality. Tuning OCR pre-processing and detection thresholds can improve results.
-- Deduplication uses plate text with a time window (`logging.dedup_interval_sec`). Adjust as needed.
-- For GPU, set `models.device: "cuda"` in `config.yaml` if available.
+---
+**Author**: Gaurav Talele
+**License**: MIT
