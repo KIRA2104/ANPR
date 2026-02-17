@@ -17,12 +17,12 @@ IMAGES_DIR = os.path.join(
     "archive",
     "State-wise_OLX"
 )
+
 # ===============================
 # LOAD MODEL & OCR
 # ===============================
 if not os.path.exists(MODEL_PATH):
     raise FileNotFoundError(f"Plate model not found at: {MODEL_PATH}")
-
 print(f"Loading plate model from: {MODEL_PATH}")
 model = YOLO(MODEL_PATH)
 
@@ -74,7 +74,6 @@ def is_plate_quality_good(x1, y1, x2, y2, frame_w, frame_h):
 
     return True
 
-
 def clean_plate_robust(text: str) -> str:
     """
     Robust cleaning for Indian License Plates (e.g., MH12DE1433)
@@ -124,7 +123,7 @@ def clean_plate_robust(text: str) -> str:
 if not os.path.isdir(IMAGES_DIR):
     raise FileNotFoundError(f"Image folder not found: {IMAGES_DIR}")
 
-state_dirs = [
+state_dirs = [ 
     d for d in sorted(os.listdir(IMAGES_DIR))
     if os.path.isdir(os.path.join(IMAGES_DIR, d))
 ]
@@ -250,7 +249,6 @@ while True:
 
 
 from collections import Counter
-
 counts = Counter(detected_texts)
 print("\nUnique plates with counts:")
 for plate, cnt in counts.items():
