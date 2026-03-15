@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quantum PLI Pitch</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --border: #e0e3e8;
+    --border-dark: #c8cdd6;
+    --accent: #1a56db;
+    --accent2: #6366f1;
+    --accent3: #0ea5e9;
+    --text: #374151;
+    --text-dim: #9ca3af;
+    --text-bright: #111827;
+    --red: #ef4444;
+    --green: #16a34a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg); color: var(--text);
+    font-family: 'Inter', sans-serif;
+  }
+
+  .poster {
+    width: 100%; height: 100vh;
+    padding: 16px;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: 14px;
+  }
+
+  /* HEADER */
+  header {
+    background: var(--panel); border: 1px solid var(--border);
+    border-top: 3px solid var(--accent);
+    padding: 16px 26px;
+    display: flex; align-items: center; justify-content: space-between; gap: 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  .header-badge { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--accent); border: 1px solid var(--border-dark); padding: 4px 10px; white-space: nowrap; font-weight: 600; border-radius: 2px; }
+  .header-center { text-align: center; flex: 1; }
+  .poster-title { font-size: 22px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-bright); }
+  .poster-title span { color: var(--accent); }
+  .poster-subtitle { font-size: 12px; color: var(--text-dim); letter-spacing: 0.5px; margin-top: 4px; }
+  .org-tag { font-family: 'Share Tech Mono', monospace; font-size: 10px; color: var(--text-dim); display: block; text-align: right; }
+  .org-tag + .org-tag { margin-top: 3px; }
+
+  /* MAIN GRID: 4 columns, 2 rows */
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 12px;
+  }
+
+  /* CARD */
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    padding: 14px 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    overflow: hidden;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .card.c1 { border-top: 3px solid var(--accent); }
+  .card.c2 { border-top: 3px solid var(--accent2); }
+  .card.c3 { border-top: 3px solid var(--accent3); }
+  .card.c4 { border-top: 3px solid #f59e0b; }
+  .card.c5 { border-top: 3px solid var(--red); }
+  .card.c6 { border-top: 3px solid var(--green); }
+  .card.c7 { border-top: 3px solid #8b5cf6; }
+  .card.c8 { border-top: 3px solid #0891b2; }
+
+  .card-num { font-family: 'Share Tech Mono', monospace; font-size: 9.5px; color: var(--text-dim); letter-spacing: 2px; }
+  .card-title {
+    font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;
+    padding-bottom: 7px; border-bottom: 1px solid var(--border); color: var(--text-bright);
+    flex-shrink: 0;
+  }
+  .card.c1 .card-title { color: var(--accent); }
+  .card.c2 .card-title { color: var(--accent2); }
+  .card.c3 .card-title { color: var(--accent3); }
+  .card.c4 .card-title { color: #d97706; }
+  .card.c5 .card-title { color: var(--red); }
+  .card.c6 .card-title { color: var(--green); }
+  .card.c7 .card-title { color: #7c3aed; }
+  .card.c8 .card-title { color: #0891b2; }
+
+  p { font-size: 12px; line-height: 1.7; color: var(--text); }
+
+  ul { list-style: none; }
+  ul li { font-size: 12px; line-height: 1.65; padding-left: 14px; position: relative; color: var(--text); margin-bottom: 1px; }
+  ul li::before { content: '–'; position: absolute; left: 0; color: var(--text-dim); }
+
+  .label { font-size: 9.5px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); margin-top: 6px; flex-shrink: 0; }
+
+  .mono-block {
+    background: #f9fafb; border: 1px solid var(--border);
+    padding: 8px 10px; font-family: 'Share Tech Mono', monospace;
+    font-size: 10.5px; color: var(--text-dim); line-height: 1.75; flex-shrink: 0;
+  }
+  .mono-block .hl  { color: var(--accent); font-weight: 600; }
+  .mono-block .hl2 { color: var(--accent2); font-weight: 600; }
+  .mono-block .red { color: var(--red); font-weight: 600; }
+
+  .principle { border-left: 2px solid var(--border-dark); padding: 7px 10px; background: #f9fafb; }
+  .principle.p1 { border-color: var(--accent); }
+  .principle.p2 { border-color: var(--accent2); }
+  .principle.p3 { border-color: var(--accent3); }
+  .p-title { font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 3px; }
+  .principle.p1 .p-title { color: var(--accent); }
+  .principle.p2 .p-title { color: var(--accent2); }
+  .principle.p3 .p-title { color: var(--accent3); }
+  .principle p { font-size: 11.5px; }
+  .mono-line { font-family: 'Share Tech Mono', monospace; font-size: 10px; color: var(--text-dim); margin-top: 4px; }
+
+  .vs-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .vs-box { border: 1px solid var(--border); background: #f9fafb; padding: 8px 10px; }
+  .vs-title { font-size: 11px; font-weight: 700; text-transform: uppercase; margin-bottom: 5px; }
+  .vs-box.cl .vs-title { color: var(--red); }
+  .vs-box.qu .vs-title { color: var(--green); }
+  .vs-box ul li { font-size: 11.5px; }
+
+  .stat-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .stat-box { background: #f9fafb; border: 1px solid var(--border); padding: 8px; text-align: center; }
+  .stat-val { font-family: 'Share Tech Mono', monospace; font-size: 18px; color: var(--accent); font-weight: 700; }
+  .stat-label { font-size: 10px; color: var(--text-dim); margin-top: 3px; line-height: 1.3; }
+
+  .tag { display: inline-block; font-size: 9.5px; font-family: 'Share Tech Mono', monospace; border: 1px solid var(--border-dark); padding: 2px 7px; margin: 2px 2px 0 0; color: var(--text-dim); border-radius: 2px; }
+
+  .insight-box {
+    background: #f9fafb; border: 1px solid var(--border);
+    padding: 10px 12px; font-size: 12.5px;
+    color: var(--text); line-height: 1.7; text-align: center;
+  }
+  .insight-box .hl  { color: var(--accent); font-weight: 600; }
+  .insight-box .hl2 { color: var(--accent2); font-weight: 600; }
+
+  /* FOOTER */
+  footer {
+    background: var(--panel); border: 1px solid var(--border);
+    border-top: 3px solid var(--accent2);
+    padding: 14px 28px; text-align: center;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  }
+  .key-statement { font-size: 13.5px; font-weight: 400; line-height: 1.75; color: var(--text); max-width: 860px; margin: 0 auto; }
+  .key-statement .a { color: var(--accent); font-weight: 600; }
+  .key-statement .b { color: var(--accent2); font-weight: 600; }
+  .footer-note { margin-top: 6px; font-size: 10px; color: var(--text-dim); font-family: 'Share Tech Mono', monospace; letter-spacing: 1px; }
+</style>
+</head>
+<body>
+<div class="poster">
+
+  <!-- HEADER -->
+  <header>
+    <div class="header-center">
+      <div class="poster-title">Quantum <span>Personalized Learning</span> Intelligence</div>
+      <div class="poster-subtitle">A Hybrid Quantum–AI Framework for Deep Cognitive Optimization</div>
+    </div>
+  </header>
+
+  <!-- 4×2 GRID -->
+  <div class="grid">
+
+    <!-- ROW 1 -->
+
+    <!-- 1. The Problem -->
+    <div class="card c1">
+      <div class="card-num">01 — THE PROBLEM</div>
+      <div class="card-title">Education Is a Combinatorial Problem</div>
+      <p>Every student's learning pathway depends on multiple interacting variables — creating a decision space so large that classical AI cannot fully optimize it in real time. No two students learn the same way, yet most systems treat them identically.</p>
+      <div class="label" style="margin-top:6px;">Key Variables in Every Learning Journey</div>
+      <ul style="margin-top:4px;">
+        <li><strong>Prior knowledge</strong> — what concepts a student already understands and where gaps exist</li>
+        <li><strong>Memory decay</strong> — how quickly learned material fades without timely reinforcement</li>
+        <li><strong>Cognitive load</strong> — how much mental effort a task demands at any given moment</li>
+        <li><strong>Emotional state</strong> — stress, confidence, and motivation directly affect retention</li>
+        <li><strong>Concept sequencing</strong> — the order topics are introduced significantly impacts mastery</li>
+      </ul>
+      <div class="label" style="margin-top:6px;">Why This Is Hard</div>
+      <p>These variables do not operate independently — they interact. A drop in confidence affects retention. A poorly sequenced concept increases cognitive load. Modeling all interactions simultaneously is beyond classical AI's real-time capacity.</p>
+    </div>
+
+    <!-- 2. Scale -->
+    <div class="card c2">
+      <div class="card-num">02 — SCALE OF THE PROBLEM</div>
+      <div class="card-title">Combinatorial Explosion</div>
+      <p>When multiple teaching variables are combined across a full curriculum, the number of possible learning configurations grows exponentially — far beyond what any classical system can evaluate in real time.</p>
+      <div class="mono-block" style="margin-top:6px;">
+        5 styles × 4 difficulty × 6 intervals × 5 sequences<br>
+        ──────────────────────────────────<br>
+        = <span class="hl">600+ paths</span> per student, per concept<br><br>
+        Across 100+ concepts with real-time state changes<br>
+        → <span class="red">10⁸⁺ simultaneous possibilities</span>
+      </div>
+      <div class="label">Classical vs Quantum Approach</div>
+      <p style="margin-bottom:6px;">Classical systems pick one path using approximations. Quantum algorithms encode the solution space into quantum states and leverage interference to amplify near-optimal solutions.</p>
+      <div class="vs-row">
+        <div class="vs-box cl">
+          <div class="vs-title">✗ Classical AI</div>
+          <ul>
+            <li>Sequential search</li>
+            <li>Heuristic approx.</li>
+            <li>Cannot scale live</li>
+          </ul>
+        </div>
+        <div class="vs-box qu">
+          <div class="vs-title">✓ Quantum</div>
+          <ul>
+            <li>Interference-guided search</li>
+            <li>Near-optimal solutions</li>
+            <li>Scales with qubits</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Quantum Principles -->
+    <div class="card c3">
+      <div class="card-num">03 — THE QUANTUM EDGE</div>
+      <div class="card-title">Why Quantum Is Relevant</div>
+      <p>Quantum computing introduces fundamentally different computational properties that map naturally onto the structure of personalized learning optimization.</p>
+      <div class="principle p1" style="margin-top:8px;">
+        <div class="p-title">Superposition</div>
+        <p>A qubit exists in multiple states at once. Quantum algorithms encode the solution space into quantum states and leverage interference to amplify near-optimal learning configurations — drastically reducing search time over large spaces.</p>
+        <div class="mono-line">|ψ⟩ = α|0⟩ + β|1⟩  →  interference guides towards optimal</div>
+      </div>
+      <div class="principle p2" style="margin-top:6px;">
+        <div class="p-title">Entanglement</div>
+        <p>Entangled qubits are naturally suited to represent correlated systems — concept mastery, confidence, and retention are deeply linked, and quantum entanglement captures these dependencies in a structure classical factorization cannot replicate.</p>
+        <div class="mono-line">Concept A ↔ Confidence ↔ Retention ↔ Concept B</div>
+      </div>
+    </div>
+
+    <!-- 4. Quantum Tools -->
+    <div class="card c4">
+      <div class="card-num">04 — QUANTUM TOOLS</div>
+      <div class="card-title">Quantum Tools Enabling Personalized Learning Intelligence</div>
+      <div class="label">Tools Available Today — Foundation Stage</div>
+      <ul style="margin-top:4px;">
+        <li>Hybrid Quantum–AI Platforms for optimizing learning pathways</li>
+        <li>Quantum Annealing Systems to solve complex curriculum sequencing</li>
+        <li>Multimodal AI Models that analyze student interaction patterns</li>
+        <li>Reinforcement Learning Engines for adaptive teaching strategies</li>
+        <li>Federated Learning Frameworks ensuring privacy-preserving education</li>
+      </ul>
+      <div class="label" style="margin-top:8px;">Future Tools Yet to Be Built — Vision Stage</div>
+      <ul style="margin-top:4px;">
+        <li>Quantum Cognitive Simulators to model how humans understand concepts</li>
+        <li>Real-Time Quantum Optimization Chips for live classroom adaptation</li>
+        <li>Quantum Knowledge Graph Engines mapping deep concept relationships</li>
+        <li>Quantum-Secure Learning Networks protecting lifelong learning data</li>
+        <li>Advanced Quantum ML Models for probabilistic learning analysis</li>
+      </ul>
+    </div>
+
+    <!-- ROW 2 -->
+
+    <!-- 5. Current Gaps -->
+    <div class="card c5">
+      <div class="card-num">05 — CURRENT LIMITATIONS</div>
+      <div class="card-title">Where Existing EdTech Falls Short</div>
+      <p>No existing platform addresses the full depth of cognitive optimization needed for truly personalized learning at scale.</p>
+      <ul style="margin-top:6px;">
+        <li>Static models with no real-time path recomputation</li>
+        <li>No system models multi-variable cognitive dependencies together</li>
+        <li>Classical personalization degrades as concept complexity scales</li>
+        <li>Emotional and engagement signals are largely ignored</li>
+        <li>One-size-fits-all pacing fails diverse learner profiles</li>
+      </ul>
+    </div>
+
+    <!-- 6. Outcomes -->
+    <div class="card c6">
+      <div class="card-num">06 — KEY OUTCOMES</div>
+      <div class="card-title">What This System Achieves</div>
+      <ul>
+        <li>Equal access to optimized, personalized learning for every student</li>
+        <li>Reduced dropout rates by addressing gaps before they widen</li>
+        <li>Smarter concept sequencing for stronger STEM outcomes</li>
+        <li>Emotionally-aware, data-driven instruction for all learner types</li>
+        <li>Scalable system that improves as more students use it</li>
+      </ul>
+      <div class="stat-row" style="margin-top:10px;">
+        <div class="stat-box">
+          <div class="stat-val">10×</div>
+          <div class="stat-label">More paths explored per student</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-val">250M</div>
+          <div class="stat-label">Students in India who benefit</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-val">Live</div>
+          <div class="stat-label">Real-time adaptive optimization</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 7. National Impact -->
+    <div class="card c7">
+      <div class="card-num">07 — NATIONAL IMPACT</div>
+      <div class="card-title">Why This Matters at Scale</div>
+      <p>Modern education is data-heavy, multi-variable, and real-time — exactly the class of problems where quantum optimization provides a structural advantage over classical approaches.</p>
+      <ul style="margin-top:8px;">
+        <li>Bridges the urban–rural education quality divide</li>
+        <li>Accelerates India's talent pipeline in science and technology</li>
+        <li>Positions India as a global leader in quantum-AI EdTech</li>
+        <li>Aligns with India's push for sovereign AI and quantum infrastructure</li>
+      </ul>
+    </div>
+
+    <!-- 8. Policy -->
+    <div class="card c8">
+      <div class="card-num">08 — POLICY ALIGNMENT</div>
+      <div class="card-title">Aligned with National Priorities</div>
+      <p>This initiative is directly aligned with India's strategic frameworks for quantum computing, AI-driven education, and digital infrastructure.</p>
+      <div class="label" style="margin-top:10px;">Relevant Missions &amp; Policies</div>
+      <div style="margin-top:6px; line-height:2;">
+        <span class="tag">National Quantum Mission</span>
+        <span class="tag">Digital India</span>
+        <span class="tag">NEP 2020</span>
+        <span class="tag">AI-Enabled EdTech</span>
+        <span class="tag">NITI Aayog AI Strategy</span>
+        <span class="tag">Atmanirbhar Bharat</span>
+        <span class="tag">IMPRINT India</span>
+      </div>
+      <div class="label" style="margin-top:10px;">Research Collaboration Potential</div>
+      <ul>
+        <li>IITs, IISERs — quantum algorithm development</li>
+        <li>CDAC — computing infrastructure &amp; deployment</li>
+        <li>DIAT — applied research validation</li>
+      </ul>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

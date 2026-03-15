@@ -4,27 +4,41 @@ import easyocr
 import numpy as np
 import re
 import os
+import json
+from datetime import datetime
+from db import MongoLogger
 
 # ===============================
 # PATHS
 # ===============================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-MODEL_PATH = os.path.join(BASE_DIR, "assets", "best1.pt")
+PLATE_MODEL_PATH = os.path.join(BASE_DIR, "assets", "Plate.pt")
+VEHICLE_MODEL_PATH = os.path.join(BASE_DIR, "assets", "Vehicle.pt")
 IMAGES_DIR = os.path.join(
     os.path.dirname(BASE_DIR),
     "recordings",
     "archive",
     "State-wise_OLX"
 )
+LOG_FILE_PATH = os.path.join(
+    os.path.dirname(BASE_DIR),
+    "detections_log.jsonl"
+)
 
 # ===============================
 # LOAD MODEL & OCR
 # ===============================
-if not os.path.exists(MODEL_PATH):
-    raise FileNotFoundError(f"Plate model not found at: {MODEL_PATH}")
-print(f"Loading plate model from: {MODEL_PATH}")
-model = YOLO(MODEL_PATH)
+if not os.path.exists(PLATE_MODEL_PATH):
+    raise FileNotFoundError(f"Plate model not found at: {PLATE_MODEL_PATH}")
+if not os.path.exists(VEHICLE_MODEL_PATH):
+    raise FileNotFoundError(f"Vehicle model not found at: {VEHICLE_MODEL_PATH}")
+
+print(f"Loading plate model from: {PLATE_MODEL_PATH}")
+plate_model = YOLO(PLATE_MODEL_PATH)
+
+print(f"Loading vehicle model from: {VEHICLE_MODEL_PATH}")
+vehicle_model = YOLO(VEHICLE_MODEL_PATH)
 
 print("Initializing EasyOCR reader...")
 reader = easyocr.Reader(['en'], gpu=False)
@@ -39,7 +53,31 @@ MIN_PLATE_HEIGHT_RATIO = 0.015
 BORDER_MARGIN = 2               
 PROCESS_EVERY_N_FRAMES = 1      
 DEBUG_REJECTIONS = False        
-DEBUG_OCR = True               
+DEBUG_OCR = True
+
+# ===============================
+# LOGGING FUNCTION
+# ===============================
+def log_plate_detection(vehicle_type: str, plate_text: str, confidence: float, 
+                        image_path: str, raw_ocr_text: str = ""):
+    """
+    Log detected license plate to file (JSONL format).
+    This ensures every proper detection is recorded regardless of MongoDB status.
+    """
+    log_entry = {
+        "timestamp": datetime.now().isoformat(),
+        "vehicle_type": vehicle_type,
+        "plate_number": plate_text,
+        "ocr_confidence": confidence,
+        "image_path": image_path,
+        "raw_ocr_text": raw_ocr_text
+    }
+    
+    try:
+        with open(LOG_FILE_PATH, 'a') as f:
+            f.write(json.dumps(log_entry) + '\n')
+    except Exception as e:
+        print(f"⚠️ File logging error: {e}")
 
 def is_plate_quality_good(x1, y1, x2, y2, frame_w, frame_h):
     """
@@ -136,6 +174,17 @@ detected_texts = []
 print("Available states:")
 print(", ".join(state_dirs))
 print("\nType a state code to run (or 'all' to run every state, 'q' to quit).")
+print(f"\n📁 All detections will be logged to: {LOG_FILE_PATH}")
+
+# Initialize MongoDB
+try:
+    db = MongoLogger()
+    print("✅ Connected to MongoDB for logging.")
+    print(f"   Database: {db.db.name}, Collection: {db.logs.name}")
+except Exception as e:
+    print(f"⚠️ MongoDB connection failed: {e}")
+    print("   (File logging will still work)")
+    db = None
 
 while True:
     selection = input("State> ").strip().upper()
@@ -172,7 +221,19 @@ while True:
                 print(f"[SKIP] Cannot read: {image_path}")
                 continue
 
-            results = model.predict(img, conf=DETECTION_CONF, verbose=False)
+            # Detect vehicle type once per image
+            vehicle_type = "Unknown"
+            vehicle_results = vehicle_model.predict(img, conf=0.4, verbose=False)
+            if vehicle_results and vehicle_results[0].boxes:
+                # Get the class name with highest confidence
+                for box in vehicle_results[0].boxes:
+                    class_id = int(box.cls[0])
+                    class_name = vehicle_model.names.get(class_id, "Unknown")
+                    vehicle_type = class_name
+                    break  # Use first (highest confidence) detection
+            
+            # Detect plates
+            results = plate_model.predict(img, conf=DETECTION_CONF, verbose=False)
             found_in_image = []
             total_boxes = 0
             ocr_candidates = []
@@ -231,6 +292,26 @@ while True:
                     if plate_text:
                         detected_texts.append(plate_text)
                         found_in_image.append(plate_text)
+                        
+                        # Calculate confidence from OCR
+                        conf = 0.0
+                        if ocr_result:
+                            conf = max(r[2] for r in ocr_result)
+                        
+                        # ALWAYS log to file, regardless of MongoDB status
+                        log_plate_detection(vehicle_type, plate_text, float(conf), image_path, raw_text)
+                        print(f"[✅ FILE LOGGED] {vehicle_type} | {plate_text} | {conf:.2f}")
+                        
+                        # Also try MongoDB if available
+                        if db:
+                            try:
+                                result = db.save_vehicle(vehicle_type, plate_text, float(conf))
+                                if result:
+                                    print(f"[📊 DB LOGGED] {vehicle_type} | {plate_text}")
+                                else:
+                                    print(f"[⚠️ DB FAILED] {vehicle_type} | {plate_text} - Unknown error")
+                            except Exception as e:
+                                print(f"[❌ DB ERROR] {vehicle_type} | {plate_text} | {str(e)}")
                     elif DEBUG_OCR and raw_text:
                         avg_conf = sum(r[2] for r in ocr_result) / len(ocr_result)
                         ocr_candidates.append(f"{raw_text} ({avg_conf:.2f})")

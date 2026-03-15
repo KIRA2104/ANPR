@@ -35,7 +35,6 @@ def preprocess_for_ocr(img):
     )
     return thresh
 
-
 def normalize_plate(text):
     text = text.upper()
     text = re.sub(r"[^A-Z0-9]", "", text)
@@ -45,7 +44,6 @@ def normalize_plate(text):
 
     match = re.search(r"[A-Z]{2}[0-9]{2}[A-Z]{1,2}[0-9]{3,4}", text)
     return match.group(0) if match else ""
-
 
 img = cv2.imread(IMAGE_PATH)
 
