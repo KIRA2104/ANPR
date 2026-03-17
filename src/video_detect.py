@@ -11,26 +11,17 @@ from difflib import get_close_matches
 from db import MongoLogger
 
 
-PLATE_MODEL_PATH = "/Users/gauravtalele/Downloads/LicensePlateDetection-AIML-main copy/src/assets/Plate.pt"
-VEHICLE_MODEL_PATH = "/Users/gauravtalele/Downloads/LicensePlateDetection-AIML-main copy/src/assets/Vehicle.pt"
-VIDEO_OUTPUT_DIR = "/Users/gauravtalele/Downloads/LicensePlateDetection-AIML-main copy/src/output"
-LOG_FILE_PATH = "/Users/gauravtalele/Downloads/LicensePlateDetection-AIML-main copy/video_detections_log.jsonl"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(BASE_DIR)
 
-# ===============================
-# VIDEO SOURCES — EASILY SWITCH HERE
-# ===============================
-VIDEO_PATHS = {
-    "test": "/Users/gauravtalele/Downloads/LicensePlateDetection-AIML-main copy/recordings/test.mp4",
-    "vid1": "/Users/gauravtalele/Downloads/LicensePlateDetection-AIML-main copy/recordings/VID20260226141901.mp4",
-    "vid2": "/Users/gauravtalele/Downloads/LicensePlateDetection-AIML-main copy/recordings/VID20260226142204.mp4"
-}
+PLATE_MODEL_PATH = os.path.join(BASE_DIR, "assets", "Plate.pt")
+VEHICLE_MODEL_PATH = os.path.join(BASE_DIR, "assets", "Vehicle.pt")
+VIDEO_OUTPUT_DIR = os.path.join(BASE_DIR, "output")
+LOG_FILE_PATH = os.path.join(ROOT_DIR, "video_detections_log.jsonl")
 
-DEFAULT_VIDEO = VIDEO_PATHS["vid2"]
-# Or hardcode directly: DEFAULT_VIDEO = "/full/path/to/video.mp4"
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".wmv", ".m4v"}
 
-# ===============================
-# LOAD MODEL & OCR
-# ===============================
 if not os.path.exists(PLATE_MODEL_PATH):
     raise FileNotFoundError(f"Plate model not found at: {PLATE_MODEL_PATH}")
 if not os.path.exists(VEHICLE_MODEL_PATH):
@@ -51,6 +42,8 @@ reader = easyocr.Reader(['en'], gpu=False)
 DETECTION_CONF = 0.25
 PROCESS_EVERY_N_FRAMES = 2
 MIN_PLATE_CONFIDENCE = 0.30
+IMAGE_DETECTION_CONF = 0.15
+IMAGE_MIN_PLATE_CONFIDENCE = 0.20
 CONFIRMATION_THRESHOLD = 3      # Must see same plate N times before logging
 MIN_FINAL_CONFIDENCE = 0.25
 COOLDOWN_FRAMES = 100
@@ -164,6 +157,44 @@ def clean_plate_robust(text: str) -> str:
     result = corrected_state + result[2:]
     return result
 
+
+def extract_best_plate_from_ocr(ocr_result):
+    """
+    Pick best valid plate candidate from OCR output.
+    Strategy:
+    1) Try each OCR segment independently
+    2) Try concatenated OCR text as fallback
+    Returns (plate_text, confidence, raw_text)
+    """
+    if not ocr_result:
+        return "", 0.0, ""
+
+    best_plate = ""
+    best_conf = 0.0
+    best_raw = ""
+
+    for item in ocr_result:
+        if len(item) < 3:
+            continue
+        raw_text = str(item[1])
+        conf = float(item[2])
+        cleaned = clean_plate_robust(raw_text)
+        if cleaned and conf > best_conf:
+            best_plate = cleaned
+            best_conf = conf
+            best_raw = raw_text
+
+    if best_plate:
+        return best_plate, best_conf, best_raw
+
+    combined_raw = "".join([str(r[1]) for r in ocr_result if len(r) >= 2])
+    combined_plate = clean_plate_robust(combined_raw)
+    combined_conf = max([float(r[2]) for r in ocr_result if len(r) >= 3], default=0.0)
+    if combined_plate:
+        return combined_plate, combined_conf, combined_raw
+
+    return "", 0.0, combined_raw
+
 # ===============================
 # DRAW DETECTIONS
 # ===============================
@@ -177,6 +208,126 @@ def draw_detection(frame, x1, y1, x2, y2, plate_text, confidence, vehicle_type):
     cv2.putText(frame, label, (x1 + 5, y1 - h2 - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
     cv2.putText(frame, vehicle_label, (x1 + 5, y1 - 3), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
     return frame
+
+
+def detect_media_type(file_path: str) -> str:
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext in VIDEO_EXTENSIONS:
+        return "video"
+    if ext in IMAGE_EXTENSIONS:
+        return "image"
+    return "unknown"
+
+
+def process_image(image_path: str, save_output: bool = True, show_image: bool = True):
+    if not os.path.exists(image_path):
+        raise FileNotFoundError(f"Image file not found: {image_path}")
+
+    frame = cv2.imread(image_path)
+    if frame is None:
+        raise ValueError(f"Cannot read image file: {image_path}")
+
+    print(f"\n🖼️ Processing image: {image_path}")
+    print(f"📁 Detections will be logged to: {LOG_FILE_PATH}\n")
+
+    db = None
+    try:
+        db = MongoLogger()
+        print(f"✅ Connected to MongoDB — DB: {db.db.name}, Collection: {db.logs.name}\n")
+    except Exception as e:
+        print(f"⚠️ MongoDB connection failed: {e}  (File logging still active)\n")
+
+    h, w = frame.shape[:2]
+    vehicle_type = "Unknown"
+    vehicle_results = vehicle_model.predict(frame, conf=0.4, verbose=False)
+    if vehicle_results and vehicle_results[0].boxes:
+        box = vehicle_results[0].boxes[0]
+        class_id = int(box.cls[0])
+        vehicle_type = vehicle_model.names.get(class_id, "Unknown")
+
+    results = plate_model.predict(frame, conf=IMAGE_DETECTION_CONF, verbose=False)
+    detections = []
+
+    for result in results:
+        if result.boxes is None:
+            continue
+        for box in result.boxes:
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+            x1, y1 = max(0, x1), max(0, y1)
+            x2, y2 = min(w - 1, x2), min(h - 1, y2)
+            if x2 <= x1 or y2 <= y1:
+                continue
+
+            pad_x = int(0.08 * (x2 - x1))
+            pad_y = int(0.18 * (y2 - y1))
+            px1 = max(0, x1 + pad_x)
+            py1 = max(0, y1 + pad_y)
+            px2 = min(w - 1, x2 - pad_x)
+            py2 = min(h - 1, y2 - pad_y)
+            if px2 <= px1 or py2 <= py1:
+                continue
+
+            plate_crop = frame[py1:py2, px1:px2]
+            if plate_crop.size == 0:
+                continue
+
+            gray = cv2.cvtColor(plate_crop, cv2.COLOR_BGR2GRAY)
+            gray = cv2.resize(gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
+            gray = cv2.GaussianBlur(gray, (5, 5), 0)
+            _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+            thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+
+            ocr_result = reader.readtext(
+                thresh,
+                allowlist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+                detail=1
+            )
+
+            plate_text, conf, raw_text = extract_best_plate_from_ocr(ocr_result)
+            if not plate_text:
+                continue
+
+            if conf < IMAGE_MIN_PLATE_CONFIDENCE:
+                continue
+
+            detections.append({
+                "plate": plate_text,
+                "confidence": conf,
+                "vehicle_type": vehicle_type,
+                "raw_text": raw_text,
+                "bbox": (x1, y1, x2, y2)
+            })
+
+    if not detections:
+        print("⚠️ No valid plate detected in image")
+    else:
+        for det in detections:
+            x1, y1, x2, y2 = det["bbox"]
+            draw_detection(frame, x1, y1, x2, y2,
+                           det["plate"], det["confidence"], det["vehicle_type"])
+
+            log_plate_detection(
+                det["vehicle_type"], det["plate"], float(det["confidence"]),
+                image_path, 1, 0.0, det["raw_text"]
+            )
+            if db:
+                with suppress(Exception):
+                    db.save_vehicle(det["vehicle_type"], det["plate"], float(det["confidence"]))
+
+            print(f"[✅ LOGGED] {det['vehicle_type']:15s} | {det['plate']} | Conf: {det['confidence']:.2f}")
+
+    output_path = None
+    if save_output:
+        os.makedirs(VIDEO_OUTPUT_DIR, exist_ok=True)
+        output_path = os.path.join(VIDEO_OUTPUT_DIR, f"output_{os.path.basename(image_path)}")
+        cv2.imwrite(output_path, frame)
+        print(f"🖼️ Output: {output_path}")
+
+    if show_image:
+        cv2.imshow('License Plate Detection - Image', frame)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
 
 # ===============================
 # MAIN PROCESSING
@@ -325,13 +476,11 @@ def process_video(video_path: str, save_output: bool = True, show_video: bool = 
                         detail=1
                     )
 
-                    raw_text = "".join([r[1] for r in ocr_result]) if ocr_result else ""
-                    plate_text = clean_plate_robust(raw_text)
+                    plate_text, conf, raw_text = extract_best_plate_from_ocr(ocr_result)
 
                     if not plate_text:
                         continue
 
-                    conf = max(r[2] for r in ocr_result) if ocr_result else 0.0
                     if conf < MIN_PLATE_CONFIDENCE:
                         continue
 
@@ -548,41 +697,49 @@ def process_video(video_path: str, save_output: bool = True, show_video: bool = 
 # MAIN
 # ===============================
 if __name__ == "__main__":
-    import sys
-
     print("=" * 60)
-    print("🚗 LICENSE PLATE DETECTION - VIDEO PROCESSOR")
+    print("🚗 LICENSE PLATE DETECTION - MEDIA PROCESSOR")
     print("=" * 60)
 
-    if len(sys.argv) > 1:
-        video_path = sys.argv[1]
-    else:
-        video_path = DEFAULT_VIDEO
-        print(f"\n✅ Using default video: {video_path}")
-
+    MEDIA_PATH = "/Users/gauravtalele/Downloads/LicensePlateDetection-AIML-main copy/recordings/test.mp4"
     save_output = True
-    show_video = True
-
-    print(f"\n📌 Settings:")
-    print(f"   Video:                  {video_path}")
-    print(f"   Save Output:            {save_output}")
-    print(f"   Show Live Video:        {show_video}")
-    print(f"   Process Every N Frames: {PROCESS_EVERY_N_FRAMES}")
-    print(f"   Min OCR Confidence:     {MIN_PLATE_CONFIDENCE}")
-    print(f"   Confirmation Threshold: {CONFIRMATION_THRESHOLD} detections")
-    print(f"   Min Final Confidence:   {MIN_FINAL_CONFIDENCE}")
-    print(f"   Cooldown Frames:        {COOLDOWN_FRAMES}")
-    print(f"   Valid State Codes:      {len(VALID_STATE_CODES)} Indian RTO codes")
-    print("\n💡 Box colours:")
-    print("   Yellow = Tracking (below confirmation threshold)")
-    print("   Green  = Confirmed (≥ threshold, ready to log)")
-    print("   Gray   = Already logged (in cooldown)")
-    print("   Press 'q' to stop")
+    show_output = True
 
     try:
-        process_video(video_path, save_output=save_output, show_video=show_video)
+        selected_path = os.path.abspath(os.path.expanduser(MEDIA_PATH.strip().strip('"').strip("'")))
+        if not os.path.isfile(selected_path):
+            raise FileNotFoundError(f"Media file not found: {selected_path}")
+
+        media_type = detect_media_type(selected_path)
+
+        print(f"\n📌 Settings:")
+        print(f"   Selected File:          {selected_path}")
+        print(f"   Media Type:             {media_type}")
+        print(f"   Save Output:            {save_output}")
+        print(f"   Show Preview:           {show_output}")
+        print(f"   Process Every N Frames: {PROCESS_EVERY_N_FRAMES}")
+        print(f"   Min OCR Confidence:     {MIN_PLATE_CONFIDENCE}")
+        print(f"   Confirmation Threshold: {CONFIRMATION_THRESHOLD} detections")
+        print(f"   Min Final Confidence:   {MIN_FINAL_CONFIDENCE}")
+        print(f"   Cooldown Frames:        {COOLDOWN_FRAMES}")
+        print(f"   Valid State Codes:      {len(VALID_STATE_CODES)} Indian RTO codes")
+
+        if media_type == "video":
+            print("\n💡 Box colours:")
+            print("   Yellow = Tracking (below confirmation threshold)")
+            print("   Green  = Confirmed (≥ threshold, ready to log)")
+            print("   Gray   = Already logged (in cooldown)")
+            print("   Press 'q' to stop")
+            process_video(selected_path, save_output=save_output, show_video=show_output)
+        elif media_type == "image":
+            process_image(selected_path, save_output=save_output, show_image=show_output)
+        else:
+            raise ValueError(
+                f"Unsupported file type: {selected_path}. "
+                f"Use one of: {sorted(IMAGE_EXTENSIONS | VIDEO_EXTENSIONS)}"
+            )
     except Exception as e:
         print(f"\n❌ Error: {e}")
         import traceback
         traceback.print_exc()
-        sys.exit(1)
+        raise SystemExit(1)

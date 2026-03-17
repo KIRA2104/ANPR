@@ -19,7 +19,7 @@ IMAGES_DIR = os.path.join(
     os.path.dirname(BASE_DIR),
     "recordings",
     "archive",
-    "State-wise_OLX"
+    "google_images"
 )
 LOG_FILE_PATH = os.path.join(
     os.path.dirname(BASE_DIR),
@@ -112,6 +112,81 @@ def is_plate_quality_good(x1, y1, x2, y2, frame_w, frame_h):
 
     return True
 
+def order_points(pts):
+    # initializie a list of coordinates that will be ordered
+    # such that the first entry in the list is the top-left,
+    # the second entry is the top-right, the third is the
+    # bottom-right, and the fourth is the bottom-left
+    rect = np.zeros((4, 2), dtype="float32")
+    
+    # the top-left point will have the smallest sum, whereas
+    # the bottom-right point will have the largest sum
+    s = pts.sum(axis=1)
+    rect[0] = pts[np.argmin(s)]
+    rect[2] = pts[np.argmax(s)]
+    
+    # now, compute the difference between the points, the
+    # top-right point will have the smallest difference,
+    # whereas the bottom-left will have the largest difference
+    diff = np.diff(pts, axis=1)
+    rect[1] = pts[np.argmin(diff)]
+    rect[3] = pts[np.argmax(diff)]
+    
+    return rect
+
+def perspective_warp(image):
+    """
+    Attempts to find the physical contours of the license plate within the cropped bounding box.
+    If 4 distinct corners are found, it geometrically warps the image so it is perfectly flat.
+    """
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(blurred, 50, 150)
+
+    contours, _ = cv2.findContours(edges.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    # Sort contours by area, keeping the largest ones
+    contours = sorted(contours, key=cv2.contourArea, reverse=True)[:5]
+    
+    plate_contour = None
+    for c in contours:
+        # Approximate the contour
+        peri = cv2.arcLength(c, True)
+        approx = cv2.approxPolyDP(c, 0.05 * peri, True)
+        
+        # If our approximated contour has four points, we can assume we found the plate
+        if len(approx) == 4:
+            plate_contour = approx
+            break
+
+    if plate_contour is not None:
+        pts = plate_contour.reshape(4, 2)
+        rect = order_points(pts)
+        (tl, tr, br, bl) = rect
+        
+        # Compute dimensions of the new image
+        widthA = np.sqrt(((br[0] - bl[0]) ** 2) + ((br[1] - bl[1]) ** 2))
+        widthB = np.sqrt(((tr[0] - tl[0]) ** 2) + ((tr[1] - tl[1]) ** 2))
+        maxWidth = max(int(widthA), int(widthB))
+        
+        heightA = np.sqrt(((tr[0] - br[0]) ** 2) + ((tr[1] - br[1]) ** 2))
+        heightB = np.sqrt(((tl[0] - bl[0]) ** 2) + ((tl[1] - bl[1]) ** 2))
+        maxHeight = max(int(heightA), int(heightB))
+        
+        # Define destination points
+        dst = np.array([
+            [0, 0],
+            [maxWidth - 1, 0],
+            [maxWidth - 1, maxHeight - 1],
+            [0, maxHeight - 1]], dtype="float32")
+        
+        # Perspective transform
+        M = cv2.getPerspectiveTransform(rect, dst)
+        warped = cv2.warpPerspective(image, M, (maxWidth, maxHeight))
+        return warped
+        
+    return image # If no 4-point contour found, return original crop
+
 def clean_plate_robust(text: str) -> str:
     """
     Robust cleaning for Indian License Plates (e.g., MH12DE1433)
@@ -130,28 +205,53 @@ def clean_plate_robust(text: str) -> str:
     if len(text) < 8 or len(text) > 10:
         return ""
 
+    # Strict list of all valid Indian State/UT Codes
+    VALID_STATE_CODES = {
+        "AN", "AP", "AR", "AS", "BR", "CH", "CG", "DN", "DD", "DL", "GA", "GJ", 
+        "HR", "HP", "JK", "JH", "KA", "KL", "LA", "LD", "MP", "MH", "MN", "ML", 
+        "MZ", "NL", "OD", "OR", "PY", "PB", "RJ", "SK", "TN", "TG", "TS", "TR", 
+        "UP", "UK", "WB"
+    }
+
     dict_char_to_int = {'O': '0', 'I': '1', 'J': '3', 'A': '4', 'G': '6', 'S': '5', 'Z': '2', 'B': '8', 'T': '7', 'Q': '0', 'D': '0'}
     dict_int_to_char = {'0': 'O', '1': 'I', '2': 'Z', '3': 'J', '4': 'A', '6': 'G', '5': 'S', '8': 'B', '7': 'T'}
 
     text_list = list(text)
+    
+    # Needs to be almost exactly 10 characters to fit XX 00 XX 0000 (often series is 1-3 letters though)
+    # We will enforce 2 Letters, 2 Numbers, 1-3 Letters, 4 Numbers
+    
+    # 1. State Code (First 2 chars MUST be letters)
     for i in [0, 1]:
-        if text_list[i] in dict_int_to_char:
+        if i < len(text_list) and text_list[i] in dict_int_to_char:
             text_list[i] = dict_int_to_char[text_list[i]]
+            
+    state_code = "".join(text_list[:2])
+    if state_code not in VALID_STATE_CODES:
+        return "" # Reject if not a valid state
     
+    # 2. RTO/District Code (Next 2 chars MUST be digits)
     for i in [2, 3]:
-        if text_list[i] in dict_char_to_int:
+        if i < len(text_list) and text_list[i] in dict_char_to_int:
             text_list[i] = dict_char_to_int[text_list[i]]
 
-    
-    suffix_start = len(text_list) - 4
+    # 3. Last 4 chars MUST be digits (Vehicle Number)
+    # Usually length is 10 (MH12DE1433), sometimes 9 (MH12D1433), or 8 (MH121433 - no series)
+    suffix_start = max(4, len(text_list) - 4) # Last 4 are numbers
     for i in range(suffix_start, len(text_list)):
-        if text_list[i] in dict_char_to_int:
+        if i < len(text_list) and text_list[i] in dict_char_to_int:
             text_list[i] = dict_char_to_int[text_list[i]]
 
-    
+    # Middle characters (Series) MUST be letters 
+    for i in range(4, suffix_start):
+        if i < len(text_list) and text_list[i] in dict_int_to_char:
+            text_list[i] = dict_int_to_char[text_list[i]]
+
     result = "".join(text_list)
     
-    if re.match(r"^[A-Z]{2}[0-9]{2}[A-Z]{0,3}[0-9]{3,4}$", result):
+    # Validation 2: Ensure strict structural regex matching Indian plates
+    # State(2 Let) + RTO(2 Dig) + Series(0-3 Let) + Num(4 Dig)
+    if re.match(r"^[A-Z]{2}[0-9]{2}[A-Z]{0,3}[0-9]{4}$", result):
         return result
 
     return ""
@@ -166,14 +266,16 @@ state_dirs = [
     if os.path.isdir(os.path.join(IMAGES_DIR, d))
 ]
 
-if not state_dirs:
-    raise FileNotFoundError(f" No state folders found in: {IMAGES_DIR}")
-
 detected_texts = [] 
 
-print("Available states:")
-print(", ".join(state_dirs))
-print("\nType a state code to run (or 'all' to run every state, 'q' to quit).")
+if state_dirs:
+    print("Available states:")
+    print(", ".join(state_dirs))
+    print("\nType a state code to run (or 'all' to run every state, 'q' to quit).")
+else:
+    print("No state subfolders found.")
+    print(f"Running directly on all images in: {IMAGES_DIR}")
+
 print(f"\n📁 All detections will be logged to: {LOG_FILE_PATH}")
 
 # Initialize MongoDB
@@ -186,21 +288,29 @@ except Exception as e:
     print("   (File logging will still work)")
     db = None
 
-while True:
-    selection = input("State> ").strip().upper()
-    if selection in {"Q", "QUIT", "EXIT"}:
-        break
+if state_dirs:
+    def iter_selected_paths():
+        while True:
+            selection = input("State> ").strip().upper()
+            if selection in {"Q", "QUIT", "EXIT"}:
+                return
 
-    if selection == "ALL":
-        selected_states = state_dirs
-    elif selection in state_dirs:
-        selected_states = [selection]
-    else:
-        print("Invalid state. Try again.")
-        continue
+            if selection == "ALL":
+                selected_states = state_dirs
+            elif selection in state_dirs:
+                selected_states = [selection]
+            else:
+                print("Invalid state. Try again.")
+                continue
 
-    for state in selected_states:
-        state_path = os.path.join(IMAGES_DIR, state)
+            for state in selected_states:
+                yield state, os.path.join(IMAGES_DIR, state)
+else:
+    def iter_selected_paths():
+        yield "google_images", IMAGES_DIR
+
+
+for state, state_path in iter_selected_paths():
         image_paths = []
         for root, _, files in os.walk(state_path):
             for filename in files:
@@ -257,10 +367,10 @@ while True:
                     pad_y = int(0.18 * (y2 - y1))
 
                    
-                    px1 = max(0, x1 + pad_x)
-                    py1 = max(0, y1 + pad_y)
-                    px2 = min(w - 1, x2 - pad_x)
-                    py2 = min(h - 1, y2 - pad_y)
+                    px1 = max(0, x1 - pad_x)
+                    py1 = max(0, y1 - pad_y)
+                    px2 = min(w - 1, x2 + pad_x)
+                    py2 = min(h - 1, y2 + pad_y)
 
                     if px2 <= px1 or py2 <= py1:
                         continue
@@ -268,6 +378,9 @@ while True:
                     plate_crop = img[py1:py2, px1:px2]
                     if plate_crop.size == 0:
                         continue
+                        
+                    # 5. Extract the potential plate into a new bitmap and correct for prospective.
+                    plate_crop = perspective_warp(plate_crop)
 
                     gray = cv2.cvtColor(plate_crop, cv2.COLOR_BGR2GRAY)
                     gray = cv2.resize(gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
@@ -281,7 +394,7 @@ while True:
                     thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
 
                     ocr_result = reader.readtext(
-                        thresh,
+                        gray,
                         allowlist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
                         detail=1
                     )
@@ -302,6 +415,10 @@ while True:
                         log_plate_detection(vehicle_type, plate_text, float(conf), image_path, raw_text)
                         print(f"[✅ FILE LOGGED] {vehicle_type} | {plate_text} | {conf:.2f}")
                         
+                        # Comprehensive CSV Log (Success)
+                        with open("plates.csv", "a") as f:
+                            f.write(f"DETECTED,{os.path.basename(image_path)},{plate_text},{raw_text}\n")
+                        
                         # Also try MongoDB if available
                         if db:
                             try:
@@ -312,9 +429,13 @@ while True:
                                     print(f"[⚠️ DB FAILED] {vehicle_type} | {plate_text} - Unknown error")
                             except Exception as e:
                                 print(f"[❌ DB ERROR] {vehicle_type} | {plate_text} | {str(e)}")
-                    elif DEBUG_OCR and raw_text:
-                        avg_conf = sum(r[2] for r in ocr_result) / len(ocr_result)
+                    elif raw_text:
+                        avg_conf = sum(r[2] for r in ocr_result) / len(ocr_result) if ocr_result else 0
                         ocr_candidates.append(f"{raw_text} ({avg_conf:.2f})")
+                        
+                        # Comprehensive CSV Log (Failed Validation)
+                        with open("plates.csv", "a") as f:
+                            f.write(f"FAILED,{os.path.basename(image_path)},,{raw_text}\n")
 
             if found_in_image:
                 unique_found = sorted(set(found_in_image))
